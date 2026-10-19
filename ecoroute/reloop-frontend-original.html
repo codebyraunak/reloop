@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f7f8f2" />
+  <title>ReLoop — E-waste Pickup & Recycling</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --ink:#18352d; --muted:#65756e; --green:#2d7657; --green-dark:#205941;
+      --lime:#d7f36a; --cream:#f7f8f2; --white:#fff; --line:#e3e9df;
+      --soft:#edf4e8; --orange:#f1a66a; --shadow:0 18px 50px rgba(27,67,49,.10);
+      --radius:22px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth;scroll-padding-top:90px}
+    body{font-family:"DM Sans",sans-serif;background:var(--cream);color:var(--ink);line-height:1.6}
+    h1,h2,h3,.brand{font-family:"Manrope",sans-serif;letter-spacing:-.04em}
+    a{color:inherit;text-decoration:none}
+    button,input,select,textarea{font:inherit}
+    button{cursor:pointer}
+    .container{width:min(1160px,92%);margin:auto}
+    .topbar{background:var(--ink);color:#e9f2e7;text-align:center;padding:8px 14px;font-size:.78rem;letter-spacing:.02em}
+    header{position:sticky;top:0;z-index:50;background:rgba(247,248,242,.92);backdrop-filter:blur(14px);border-bottom:1px solid rgba(227,233,223,.8)}
+    .nav{height:76px;display:flex;align-items:center;justify-content:space-between;gap:22px}
+    .brand{font-size:1.55rem;font-weight:800;display:flex;align-items:center;gap:9px;letter-spacing:-.06em}
+    .brand-mark{display:grid;place-items:center;width:34px;height:34px;background:var(--lime);border-radius:12px;font-size:1.15rem}
+    .nav-links{display:flex;align-items:center;gap:27px;font-size:.9rem;font-weight:600;color:#51645a}
+    .nav-links a:hover{color:var(--green)}
+    .nav-cta,.btn{border:0;border-radius:999px;padding:12px 19px;background:var(--green);color:#fff;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.2s}
+    .nav-cta:hover,.btn:hover{background:var(--green-dark);transform:translateY(-1px)}
+    .btn-light{background:#fff;color:var(--ink);border:1px solid var(--line)}
+    .btn-light:hover{background:var(--soft);color:var(--ink)}
+    .menu-toggle{display:none;border:1px solid var(--line);background:#fff;border-radius:12px;padding:8px 11px;font-size:1.2rem}
+    .hero{padding:44px 0 62px}
+    .hero-card{min-height:510px;border-radius:30px;overflow:hidden;position:relative;background:#244f3c;color:#fff;display:flex;align-items:center;box-shadow:var(--shadow)}
+    .hero-image{position:absolute;inset:0;background:
+      linear-gradient(90deg,rgba(14,44,31,.91) 0%,rgba(14,44,31,.72) 43%,rgba(14,44,31,.15) 100%),
+      url("https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=2000&q=85") center/cover}
+    .hero-content{position:relative;z-index:1;max-width:650px;padding:64px 7%}
+    .eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(215,243,106,.15);border:1px solid rgba(215,243,106,.45);color:var(--lime);border-radius:999px;padding:7px 12px;font-size:.78rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+    .hero h1{font-size:clamp(2.7rem,5.3vw,4.7rem);line-height:1.06;margin:23px 0 19px;max-width:660px}
+    .hero h1 span{color:var(--lime)}
+    .hero p{font-size:1.06rem;color:#e1ebe2;max-width:550px}
+    .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:29px}
+    .hero .btn{padding:14px 21px}
+    .hero .btn-light{background:rgba(255,255,255,.94);border:0}
+    .hero-note{display:flex;align-items:center;gap:10px;margin-top:30px;font-size:.83rem;color:#e5eee6}
+    .avatar-stack{display:flex;padding-left:4px}
+    .avatar-stack span{width:25px;height:25px;border-radius:50%;background:var(--lime);border:2px solid #28523d;margin-left:-5px;color:var(--ink);display:grid;place-items:center;font-size:.7rem}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:-29px;position:relative;z-index:2}
+    .stat{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px 24px;box-shadow:0 10px 30px rgba(25,61,42,.06)}
+    .stat strong{font-family:"Manrope";font-size:1.5rem;display:block;letter-spacing:-.04em}
+    .stat span{font-size:.83rem;color:var(--muted)}
+    section{padding:78px 0}
+    .section-head{display:flex;justify-content:space-between;align-items:end;gap:25px;margin-bottom:29px}
+    .kicker{color:var(--green);font-size:.77rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px}
+    .section-head h2{font-size:clamp(2rem,3.4vw,3rem);line-height:1.13}
+    .section-head p{max-width:430px;color:var(--muted);font-size:.96rem}
+    .items-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+    .item-card{background:#fff;border:1px solid var(--line);border-radius:19px;overflow:hidden;transition:.22s;cursor:pointer}
+    .item-card:hover{transform:translateY(-5px);box-shadow:var(--shadow);border-color:#c4d8c6}
+    .item-photo{height:135px;overflow:hidden;background:var(--soft)}
+    .item-photo img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s}
+    .item-card:hover img{transform:scale(1.06)}
+    .item-info{padding:14px 15px 16px}
+    .item-info h3{font-size:1rem;letter-spacing:-.02em}
+    .item-info p{font-size:.78rem;color:var(--muted);margin-top:4px}
+    .item-tag{display:inline-block;margin-top:10px;padding:4px 8px;background:#eff5e9;color:var(--green-dark);border-radius:7px;font-size:.69rem;font-weight:700}
+    .notice{margin-top:20px;padding:14px 17px;border-radius:13px;background:#fff8e9;border:1px solid #f3e4c4;color:#795a2e;font-size:.84rem}
+    .how{background:#eef3e9}
+    .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+    .step{padding:25px;background:rgba(255,255,255,.78);border:1px solid #dfe8d8;border-radius:20px}
+    .step-number{width:39px;height:39px;border-radius:13px;display:grid;place-items:center;background:var(--lime);font-weight:800;margin-bottom:23px}
+    .step h3{font-size:1.13rem;margin-bottom:7px}
+    .step p{font-size:.88rem;color:var(--muted)}
+    .step-icon{font-size:1.4rem;float:right}
+    .booking-layout{display:grid;grid-template-columns:.82fr 1.18fr;gap:48px;align-items:start}
+    .booking-copy{position:sticky;top:110px}
+    .booking-copy h2{font-size:clamp(2.2rem,4vw,3.3rem);line-height:1.1;margin:12px 0 18px}
+    .booking-copy>p{color:var(--muted);margin-bottom:22px}
+    .promise-list{list-style:none;display:grid;gap:13px;margin:24px 0}
+    .promise-list li{display:flex;gap:10px;align-items:flex-start;font-size:.92rem}
+    .check{width:23px;height:23px;flex:0 0 23px;background:#e3f1d7;color:var(--green);border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.8rem}
+    .form-card{background:#fff;border:1px solid var(--line);border-radius:24px;padding:30px;box-shadow:var(--shadow)}
+    .form-card h3{font-size:1.45rem;margin-bottom:5px}
+    .form-sub{font-size:.87rem;color:var(--muted);margin-bottom:24px}
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:17px}
+    .field{display:flex;flex-direction:column;gap:7px}
+    .field.full{grid-column:1/-1}
+    label{font-size:.82rem;font-weight:700;color:#344d40}
+    input,select,textarea{width:100%;border:1px solid #dce5dc;background:#fbfcf9;border-radius:11px;padding:12px 13px;outline:none;color:var(--ink);transition:.2s}
+    input:focus,select:focus,textarea:focus{border-color:#73a987;box-shadow:0 0 0 3px rgba(45,118,87,.1);background:#fff}
+    textarea{min-height:90px;resize:vertical}
+    .hint{font-size:.74rem;color:var(--muted)}
+    .form-submit{width:100%;margin-top:19px;padding:14px}
+    .form-result{display:none;margin-top:15px;padding:13px 15px;border-radius:12px;background:#eaf6e5;color:#205941;font-size:.88rem}
+    .ai-section{padding:70px 0}
+    .ai-card{background:#1c4030;border-radius:28px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;color:#fff}
+    .ai-copy{padding:47px}
+    .ai-copy .kicker{color:var(--lime)}
+    .ai-copy h2{font-size:clamp(2rem,3.5vw,3rem);line-height:1.12;margin:12px 0 15px}
+    .ai-copy p{color:#d3e2d7}
+    .ai-bullets{display:grid;gap:10px;margin-top:23px;color:#e9f1e9;font-size:.9rem}
+    .ai-bullets span:before{content:"✦";color:var(--lime);margin-right:9px}
+    .chat-panel{background:#f7faf4;color:var(--ink);padding:28px;display:flex;flex-direction:column;min-height:390px}
+    .chat-head{display:flex;align-items:center;gap:11px;padding-bottom:17px;border-bottom:1px solid var(--line)}
+    .bot-icon{width:42px;height:42px;border-radius:14px;background:var(--lime);display:grid;place-items:center;font-size:1.25rem}
+    .chat-head strong{display:block}
+    .chat-head small{color:var(--muted)}
+    .online-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#53a76b;margin-right:5px}
+    .chat-messages{flex:1;display:flex;flex-direction:column;gap:12px;padding:18px 0;min-height:180px;max-height:250px;overflow-y:auto}
+    .bubble{max-width:88%;padding:11px 13px;border-radius:14px;font-size:.86rem;line-height:1.5}
+    .bubble.bot{background:#e9f0e4;align-self:flex-start;border-bottom-left-radius:4px}
+    .bubble.user{background:var(--green);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+    .chat-suggestions{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px}
+    .suggestion{border:1px solid #cdddcf;border-radius:999px;background:#fff;color:var(--green-dark);font-size:.75rem;padding:7px 10px}
+    .chat-form{display:flex;gap:8px}
+    .chat-form input{background:#fff}
+    .chat-form button{width:46px;flex:0 0 46px;border:0;border-radius:12px;background:var(--green);color:#fff;font-size:1.15rem}
+    .chat-disclaimer{font-size:.69rem;color:#7b887f;margin-top:8px}
+    .feedback{background:#eef3e9}
+    .feedback-layout{display:grid;grid-template-columns:.8fr 1.2fr;gap:50px;align-items:center}
+    .feedback-layout h2{font-size:clamp(2.1rem,3.6vw,3.1rem);line-height:1.12;margin:10px 0 15px}
+    .feedback-layout p{color:var(--muted)}
+    .rating{display:flex;gap:7px;margin:5px 0 15px}
+    .star{border:0;background:transparent;font-size:1.8rem;color:#c7d0c4;padding:0}
+    .star.active,.star:hover{color:#e7a943}
+    .feedback-card{background:#fff;border:1px solid #dfe8d8;border-radius:23px;padding:27px}
+    .feedback-card .btn{margin-top:14px}
+    .reviews{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:28px}
+    .review{background:#fff;border:1px solid #dfe8d8;border-radius:17px;padding:19px}
+    .review-stars{color:#e7a943;letter-spacing:2px;font-size:.85rem}
+    .review p{font-size:.85rem;color:#52675a;margin:8px 0 12px}
+    .review strong{font-size:.8rem}
+    footer{background:#17382a;color:#e8f1e8;padding:43px 0 20px}
+    .footer-top{display:flex;justify-content:space-between;gap:25px;align-items:start;padding-bottom:28px}
+    footer .brand{color:#fff}
+    footer p{color:#c2d4c7;font-size:.85rem;max-width:380px;margin-top:12px}
+    .footer-links{display:flex;gap:20px;flex-wrap:wrap;font-size:.85rem;color:#d5e3d7}
+    .footer-bottom{border-top:1px solid #365847;padding-top:17px;display:flex;justify-content:space-between;gap:15px;font-size:.75rem;color:#b6cbbd}
+    .toast{position:fixed;bottom:22px;right:22px;z-index:100;background:var(--ink);color:#fff;padding:14px 18px;border-radius:14px;box-shadow:var(--shadow);max-width:330px;display:none}
+    @media(max-width:950px){
+      .nav-links{gap:14px;font-size:.82rem}.items-grid{grid-template-columns:repeat(3,1fr)}
+      .booking-layout{gap:25px}.ai-copy{padding:32px}.feedback-layout{gap:25px}
+    }
+    @media(max-width:720px){
+      .nav{height:68px}.menu-toggle{display:block}.nav-cta{display:none}
+      .nav-links{display:none;position:absolute;top:68px;left:0;right:0;background:var(--cream);padding:18px 5%;border-bottom:1px solid var(--line);flex-direction:column;align-items:flex-start}
+      .nav-links.open{display:flex}.hero{padding:25px 0 50px}.hero-card{min-height:540px}.hero-content{padding:39px 7%}
+      .hero-image{background:linear-gradient(90deg,rgba(14,44,31,.91),rgba(14,44,31,.52)),url("https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=1200&q=80") center/cover}
+      .stats{grid-template-columns:1fr;gap:9px;margin-top:-22px}.stat{padding:14px 18px}.stat strong{font-size:1.25rem}
+      section{padding:57px 0}.section-head{display:block}.section-head p{margin-top:13px}
+      .items-grid{grid-template-columns:repeat(2,1fr);gap:11px}.item-photo{height:120px}
+      .steps{grid-template-columns:1fr 1fr}.booking-layout,.ai-card,.feedback-layout{grid-template-columns:1fr}
+      .booking-copy{position:static}.form-card{padding:22px}.ai-copy{padding:30px 24px}.chat-panel{padding:22px}
+      .reviews{grid-template-columns:1fr}.footer-top{flex-direction:column}.footer-bottom{flex-direction:column}
+    }
+    @media(max-width:420px){.hero h1{font-size:2.55rem}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.steps{grid-template-columns:1fr}.hero-actions .btn{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="topbar">Small actions. Cleaner tomorrow. ♻️ &nbsp; Give your old electronics a responsible next life.</div>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="#home" aria-label="ReLoop home"><span class="brand-mark">↻</span> reloop<span style="color:var(--green)">.</span></a>
+      <nav class="nav-links" id="navLinks">
+        <a href="#home">Home</a>
+        <a href="#collect">What We Collect</a>
+        <a href="#how">How It Works</a>
+        <a href="#booking">Book a Pickup</a>
+        <a href="#assistant">AI Assistant</a>
+        <a href="#feedback">Feedback</a>
+      </nav>
+      <a class="nav-cta" href="#booking">Schedule pickup ↗</a>
+      <button class="menu-toggle" id="menuToggle" aria-label="Open navigation">☰</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="home">
+      <div class="container">
+        <div class="hero-card">
+          <div class="hero-image"></div>
+          <div class="hero-content">
+            <span class="eyebrow">♻ Better choices, less e-waste</span>
+            <h1>Old tech.<br><span>New purpose.</span></h1>
+            <p>Your unused electronics deserve more than a forgotten drawer. Find a suitable recycling centre and request a convenient pickup — all in one place.</p>
+            <div class="hero-actions">
+              <a class="btn" href="#booking">Book a free pickup request <span>→</span></a>
+              <a class="btn btn-light" href="#collect">Explore what we collect</a>
+            </div>
+            <div class="hero-note"><div class="avatar-stack"><span>♻</span><span>✓</span><span>+</span></div><span>Easy to start. Responsible by design.</span></div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><strong>10+</strong><span>Everyday electronics covered</span></div>
+          <div class="stat"><strong>One place</strong><span>Explore suitable recycling options</span></div>
+          <div class="stat"><strong>Human-approved</strong><span>Pickup confirmation after review</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="collect">
+      <div class="container">
+        <div class="section-head">
+          <div><div class="kicker">What we collect</div><h2>Make room for<br>something better.</h2></div>
+          <p>Choose the electronic items you want to recycle. Accepted items and pickup options depend on the recycling centre you select.</p>
+        </div>
+        <div class="items-grid" id="itemsGrid">
+          <article class="item-card" data-item="Laptops"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=600&q=80" alt="Laptop computer"></div><div class="item-info"><h3>Laptops</h3><p>Old or damaged laptops</p><span class="item-tag">Computing</span></div></article>
+          <article class="item-card" data-item="Desktop computers"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1587202372775-e229f172b9d7?auto=format&fit=crop&w=600&q=80" alt="Desktop computer setup"></div><div class="item-info"><h3>Desktop computers</h3><p>CPU towers and components</p><span class="item-tag">Computing</span></div></article>
+          <article class="item-card" data-item="Mobile phones"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=600&q=80" alt="Smartphone"></div><div class="item-info"><h3>Mobile phones</h3><p>Old phones and smartphones</p><span class="item-tag">Personal tech</span></div></article>
+          <article class="item-card" data-item="Televisions"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=600&q=80" alt="Television"></div><div class="item-info"><h3>Televisions</h3><p>LED and other TVs</p><span class="item-tag">Home electronics</span></div></article>
+          <article class="item-card" data-item="Tablets"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=600&q=80" alt="Tablet device"></div><div class="item-info"><h3>Tablets</h3><p>Unused tablets and e-readers</p><span class="item-tag">Personal tech</span></div></article>
+          <article class="item-card" data-item="Keyboards and mice"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&w=600&q=80" alt="Computer keyboard"></div><div class="item-info"><h3>Keyboards & mice</h3><p>Wired and wireless accessories</p><span class="item-tag">Accessories</span></div></article>
+          <article class="item-card" data-item="Printers"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?auto=format&fit=crop&w=600&q=80" alt="Printer"></div><div class="item-info"><h3>Printers</h3><p>Printers and scanners</p><span class="item-tag">Office tech</span></div></article>
+          <article class="item-card" data-item="Cables and chargers"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1609592424845-3c4c4a0a9b44?auto=format&fit=crop&w=600&q=80" alt="Charging cables"></div><div class="item-info"><h3>Cables & chargers</h3><p>Adaptors and spare cables</p><span class="item-tag">Accessories</span></div></article>
+          <article class="item-card" data-item="Cameras"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80" alt="Digital camera"></div><div class="item-info"><h3>Cameras</h3><p>Digital cameras and devices</p><span class="item-tag">Personal tech</span></div></article>
+          <article class="item-card" data-item="Audio devices"><div class="item-photo"><img loading="lazy" src="https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80" alt="Headphones"></div><div class="item-info"><h3>Audio devices</h3><p>Headphones and speakers</p><span class="item-tag">Audio</span></div></article>
+        </div>
+        <div class="notice">Please don't put e-waste in regular household bins. Check the selected centre's rules for batteries, damaged devices and data wiping before handing items over.</div>
+      </div>
+    </section>
+
+    <section class="how" id="how">
+      <div class="container">
+        <div class="section-head">
+          <div><div class="kicker">Simple by design</div><h2>Four steps to a<br>better next life.</h2></div>
+          <p>From telling us what you have to getting a confirmed pickup, the process stays clear at every step.</p>
+        </div>
+        <div class="steps">
+          <article class="step"><span class="step-icon">📝</span><div class="step-number">01</div><h3>Tell us what you have</h3><p>Share your electronic items, quantities and pickup location.</p></article>
+          <article class="step"><span class="step-icon">🔎</span><div class="step-number">02</div><h3>Find a suitable centre</h3><p>Compare centres based on accepted materials, location and fees.</p></article>
+          <article class="step"><span class="step-icon">📦</span><div class="step-number">03</div><h3>Request a pickup</h3><p>Choose a centre and submit your preferred pickup details.</p></article>
+          <article class="step"><span class="step-icon">✓</span><div class="step-number">04</div><h3>Get confirmation</h3><p>Your request waits for human review before the booking is confirmed.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="booking">
+      <div class="container booking-layout">
+        <div class="booking-copy">
+          <div class="kicker">Pickup request</div>
+          <h2>Let your old tech go the right way.</h2>
+          <p>Share a few details and our coordinator can help find an appropriate recycling option. Submitting this form creates a request — it does not confirm a pickup immediately.</p>
+          <ul class="promise-list">
+            <li><span class="check">✓</span><span><strong>Clear next steps</strong><br><small>Know what happens after you submit.</small></span></li>
+            <li><span class="check">✓</span><span><strong>Centre matching</strong><br><small>Items should match the centre's accepted materials.</small></span></li>
+            <li><span class="check">✓</span><span><strong>Human review</strong><br><small>Pickup is confirmed only after approval.</small></span></li>
+          </ul>
+          <p class="hint">Demo note: this frontend currently shows a local confirmation. Connect it to your team's backend to save real requests and verify centres.</p>
+        </div>
+        <form class="form-card" id="pickupForm">
+          <h3>Book a pickup request</h3>
+          <p class="form-sub">Fields marked * are required.</p>
+          <div class="form-grid">
+            <div class="field"><label for="fullName">Full name *</label><input id="fullName" name="name" placeholder="Your name" required minlength="2" autocomplete="name"></div>
+            <div class="field"><label for="phone">Phone number *</label><input id="phone" name="phone" type="tel" placeholder="10-digit mobile number" required pattern="[6-9][0-9]{9}" title="Enter a valid 10-digit Indian mobile number" autocomplete="tel"></div>
+            <div class="field full"><label for="email">Email address *</label><input id="email" name="email" type="email" placeholder="you@example.com" required autocomplete="email"></div>
+            <div class="field"><label for="city">City *</label><input id="city" name="city" placeholder="e.g. Mysuru" required autocomplete="address-level2"></div>
+            <div class="field"><label for="pincode">PIN code *</label><input id="pincode" name="pincode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit PIN code" required autocomplete="postal-code"></div>
+            <div class="field full"><label for="address">Pickup address / area *</label><input id="address" name="address" placeholder="Area, street, landmark" required autocomplete="street-address"></div>
+            <div class="field"><label for="itemType">Electronic item *</label><select id="itemType" name="itemType" required><option value="">Choose item</option><option>Laptops</option><option>Desktop computers</option><option>Mobile phones</option><option>Televisions</option><option>Tablets</option><option>Keyboards and mice</option><option>Printers</option><option>Cables and chargers</option><option>Cameras</option><option>Audio devices</option><option>Mixed e-waste</option></select></div>
+            <div class="field"><label for="quantity">Quantity *</label><input id="quantity" name="quantity" type="number" min="1" max="500" value="1" required></div>
+            <div class="field"><label for="condition">Item condition</label><select id="condition" name="condition"><option>Mixed / not sure</option><option>Working</option><option>Damaged</option><option>Not working</option></select></div>
+            <div class="field"><label for="date">Preferred pickup date</label><input id="date" name="date" type="date"></div>
+            <div class="field full"><label for="notes">Anything else? (optional)</label><textarea id="notes" name="notes" placeholder="More items, access instructions, preferred time…"></textarea></div>
+          </div>
+          <button class="btn form-submit" type="submit">Submit pickup request <span>→</span></button>
+          <div class="form-result" id="formResult" role="status"></div>
+          <p class="hint" style="margin-top:12px">Your details should only be sent to the project backend over a secure connection. This demo does not store or send them.</p>
+        </form>
+      </div>
+    </section>
+
+    <section class="ai-section" id="assistant">
+      <div class="container">
+        <div class="ai-card">
+          <div class="ai-copy">
+            <div class="kicker">Meet your recycling assistant</div>
+            <h2>Not sure where to start? Just ask.</h2>
+            <p>Describe your old electronics in everyday language. The AI assistant is designed to collect missing details, help match accepted materials and prepare a pickup request for human approval.</p>
+            <div class="ai-bullets">
+              <span>Understands item types, quantities and location</span>
+              <span>Helps compare suitable recycling options</span>
+              <span>Does not confirm a pickup without approval</span>
+            </div>
+          </div>
+          <div class="chat-panel">
+            <div class="chat-head"><div class="bot-icon">✦</div><div><strong>ReLoop AI Assistant</strong><small><span class="online-dot"></span>Prototype preview</small></div></div>
+            <div class="chat-messages" id="chatMessages">
+              <div class="bubble bot">Hi! 👋 Tell me which electronics you'd like to recycle and your city. I'll help you work out the next step.</div>
+            </div>
+            <div class="chat-suggestions">
+              <button class="suggestion" data-prompt="I have an old laptop">Old laptop</button>
+              <button class="suggestion" data-prompt="I have 3 mobile phones">3 mobile phones</button>
+              <button class="suggestion" data-prompt="How does pickup approval work?">How pickup works</button>
+            </div>
+            <form class="chat-form" id="chatForm"><input id="chatInput" placeholder="Tell me what you want to recycle…" aria-label="Message the AI assistant" autocomplete="off" required><button type="submit" aria-label="Send message">↑</button></form>
+            <div class="chat-disclaimer">Prototype replies only — connect your AI teammate's backend for real AI responses and verified centre matches.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="feedback" id="feedback">
+      <div class="container">
+        <div class="feedback-layout">
+          <div><div class="kicker">Your voice matters</div><h2>Help us make recycling easier.</h2><p>Was the website clear and easy to use? Share your experience so we can improve the way people find responsible e-waste options.</p></div>
+          <form class="feedback-card" id="feedbackForm">
+            <h3>Leave your feedback</h3>
+            <p class="form-sub">How was your experience?</p>
+            <div class="rating" role="group" aria-label="Rate your experience">
+              <button type="button" class="star" data-rating="1" aria-label="1 star">★</button><button type="button" class="star" data-rating="2" aria-label="2 stars">★</button><button type="button" class="star" data-rating="3" aria-label="3 stars">★</button><button type="button" class="star" data-rating="4" aria-label="4 stars">★</button><button type="button" class="star" data-rating="5" aria-label="5 stars">★</button>
+            </div>
+            <div class="field"><label for="feedbackName">Name (optional)</label><input id="feedbackName" placeholder="Your name"></div>
+            <div class="field" style="margin-top:14px"><label for="feedbackText">Your feedback *</label><textarea id="feedbackText" required placeholder="Tell us what worked well or what we could improve…"></textarea></div>
+            <button class="btn" type="submit">Send feedback →</button>
+            <div class="form-result" id="feedbackResult" role="status"></div>
+          </form>
+        </div>
+        <div class="reviews">
+          <article class="review"><div class="review-stars">★★★★★</div><p>“The steps are clear. I know what details I need before arranging a pickup.”</p><strong>— Website tester</strong></article>
+          <article class="review"><div class="review-stars">★★★★★</div><p>“Having accepted items and pickup details together makes the process feel easier.”</p><strong>— Demo feedback</strong></article>
+          <article class="review"><div class="review-stars">★★★★★</div><p>“I like that a request is reviewed before the pickup is confirmed.”</p><strong>— Demo feedback</strong></article>
+        </div>
+        <p class="hint" style="margin-top:12px">The comments above are sample demo testimonials, not verified customer reviews. Replace them with genuine feedback when available.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <div class="footer-top">
+        <div><a class="brand" href="#home"><span class="brand-mark">↻</span> reloop<span style="color:var(--lime)">.</span></a><p>Making responsible e-waste recycling simpler, one pickup request at a time.</p></div>
+        <div class="footer-links"><a href="#collect">What we collect</a><a href="#how">How it works</a><a href="#booking">Book pickup</a><a href="#assistant">AI assistant</a><a href="#feedback">Feedback</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 ReLoop · Hackathon prototype</span><span>Reuse when possible. Recycle responsibly. ♻</span></div>
+    </div>
+  </footer>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+    // Mobile navigation
+    $('#menuToggle').addEventListener('click', () => $('#navLinks').classList.toggle('open'));
+    $$('#navLinks a').forEach(link => link.addEventListener('click', () => $('#navLinks').classList.remove('open')));
+
+    // Clicking an item card preselects it in the pickup form.
+    $$('.item-card').forEach(card => card.addEventListener('click', () => {
+      const select = $('#itemType');
+      const item = card.dataset.item;
+      const option = [...select.options].find(o => o.text === item);
+      if (option) select.value = option.value;
+      $('#booking').scrollIntoView({behavior:'smooth'});
+      showToast(item + ' selected — add your pickup details below.');
+    }));
+
+    function showToast(message) {
+      const toast = $('#toast');
+      toast.textContent = message;
+      toast.style.display = 'block';
+      clearTimeout(window.toastTimer);
+      window.toastTimer = setTimeout(() => toast.style.display = 'none', 3200);
+    }
+
+    // Frontend-only form demo. Replace with fetch('/api/pickups', ...) when backend is ready.
+    $('#pickupForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      if (!form.reportValidity()) return;
+      const data = new FormData(form);
+      const requestId = 'RL-' + Math.random().toString(36).slice(2, 7).toUpperCase();
+      const result = $('#formResult');
+      result.style.display = 'block';
+      result.innerHTML = `<strong>Request prepared · ${requestId}</strong><br>Thanks, ${escapeHTML(data.get('name'))}! Your ${escapeHTML(data.get('itemType').toLowerCase())} pickup request is shown as <strong>Pending human approval</strong> in this demo. No booking has been confirmed and no information has been sent or stored.`;
+      result.scrollIntoView({behavior:'smooth',block:'nearest'});
+    });
+
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+
+    // Interactive star rating
+    let selectedRating = 0;
+    $$('.star').forEach(star => star.addEventListener('click', () => {
+      selectedRating = Number(star.dataset.rating);
+      $$('.star').forEach(s => s.classList.toggle('active', Number(s.dataset.rating) <= selectedRating));
+    }));
+    $('#feedbackForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!event.currentTarget.reportValidity()) return;
+      const result = $('#feedbackResult');
+      result.style.display = 'block';
+      result.textContent = `Thank you for your feedback${selectedRating ? ' and ' + selectedRating + '-star rating' : ''}! This demo doesn't store submissions yet.`;
+      event.currentTarget.reset();
+      selectedRating = 0;
+      $$('.star').forEach(s => s.classList.remove('active'));
+    });
+
+    // AI assistant UI prototype. Replace this local response function with the AI API/backend.
+    const chatMessages = $('#chatMessages');
+    function addBubble(text, who) {
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble ' + who;
+      bubble.textContent = text;
+      chatMessages.appendChild(bubble);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    function assistantReply(message) {
+      const lower = message.toLowerCase();
+      if (lower.includes('approval') || lower.includes('confirm') || lower.includes('book')) {
+        return 'I can help prepare a pickup request. First, we collect your item type, quantity and location, then check matching centre information. The request stays pending until a human administrator approves it. This prototype does not make real bookings yet.';
+      }
+      if (lower.includes('laptop') || lower.includes('phone') || lower.includes('computer') || lower.includes('tv') || lower.includes('tablet') || lower.includes('printer') || lower.includes('cable')) {
+        const item = lower.includes('laptop') ? 'laptop' : lower.includes('phone') ? 'mobile phone' : lower.includes('computer') ? 'computer' : lower.includes('tv') ? 'TV' : lower.includes('tablet') ? 'tablet' : lower.includes('printer') ? 'printer' : 'electronic item';
+        return `Got it — you're looking to recycle a ${item}. Which city or PIN code is the pickup in, and how many items do you have? Once those details are available, the connected system can match your items against verified centre records.`;
+      }
+      if (lower.includes('city') || lower.includes('mysuru') || lower.includes('pin') || lower.includes('location')) {
+        return 'Thanks for sharing your location. Please also tell me the electronic item types and quantities. The real AI service should then search verified recycling-centre records for that area.';
+      }
+      return 'I can help you get started! Tell me the electronic items you have (for example, a laptop, mobile phone or TV), the quantity, and your city or PIN code. I will help prepare the information needed to find a suitable recycling centre.';
+    }
+    function sendChat(message) {
+      const trimmed = message.trim();
+      if (!trimmed) return;
+      addBubble(trimmed, 'user');
+      $('#chatInput').value = '';
+      setTimeout(() => addBubble(assistantReply(trimmed), 'bot'), 450);
+    }
+    $('#chatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($('#chatInput').value); });
+    $$('.suggestion').forEach(button => button.addEventListener('click', () => sendChat(button.dataset.prompt)));
+
+    // Prevent an earlier date from being selected.
+    const today = new Date();
+    const localToday = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+    $('#date').min = localToday;
+  </script>
+</body>
+</html>

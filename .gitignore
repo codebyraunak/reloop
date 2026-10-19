@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+dist/
+*.db
+ecoroute/backend/ecoroute.db
+.pytest_cache/
+.env
+*.env
