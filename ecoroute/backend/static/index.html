@@ -797,7 +797,36 @@
           ${selected ? `<div><strong>Suggested centre:</strong> ${escapeHTML(selected.recycler_name)}</div><div><strong>Pickup fee:</strong> ₹${escapeHTML(selected.fee)} · Limit ₹${escapeHTML(plan.max_fee)}</div><div><strong>Evidence:</strong> ${escapeHTML(selected.evidence)}</div><div><strong>Source:</strong> <a href="${escapeHTML(safeSourceUrl(selected.source_url))}" target="_blank" rel="noopener">Open mock recycler source ↗</a></div>` : '<div>No compatible centre was evidenced for this request. Do not proceed until the issue is resolved.</div>'}
           <p style="margin-top:8px">${escapeHTML(plan.reason || '')}</p>
           ${rejected ? `<details style="margin-top:8px"><summary>Rejected centre evidence</summary><ul>${rejected}</ul></details>` : ''}
-          ${request.booking ? `<p style="margin-top:8px"><strong>Booking reference:</strong> ${escapeHTML(request.booking.reference)} · ${escapeHTML(request.booking.status)}</p>` : ''}
+          
+${request.booking ? `
+  <p style="margin-top:8px">
+    <strong>Booking reference:</strong>
+    ${escapeHTML(request.booking.reference)} ·
+    ${escapeHTML(request.booking.status)}
+  </p>
+
+  ${request.booking.verified_at ? `
+    <div style="margin-top:12px;padding:14px;border-radius:12px;background:#e8f5e9;border:1px solid #b7dfbd;color:#216e45">
+      <strong>✓ Booking verification: Verified successfully</strong>
+      <p style="margin-bottom:4px">
+        <strong>Verified at:</strong>
+        ${escapeHTML(request.booking.verified_at)}
+      </p>
+      <p style="margin-bottom:4px">
+        <strong>Evidence:</strong>
+        ${escapeHTML(request.booking.verification_evidence || 'Booking record checked.')}
+      </p>
+    </div>
+    <p class="hint">
+      Collection is not confirmed. A booking reference does not prove physical collection.
+    </p>
+  ` : `
+    <p class="hint">
+      Verification pending. Select Verify booking status to check the stored booking record.
+    </p>
+  `}
+` : ''}
+
         </div>
         <div class="workflow-actions">
           ${canApprove ? `<button class="btn" type="button" id="approveRequestButton">Approve plan${approvalNeeded ? ' & accept fee exception' : ''}</button><button class="btn btn-light" type="button" id="declineRequestButton">Decline</button>` : ''}
