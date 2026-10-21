@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
+import psycopg
+from psycopg.rows import dict_row
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -24,15 +25,8 @@ FRONTEND_FILE = BASE_DIR / "static" / "index.html"
 load_dotenv(BASE_DIR / ".env")
 load_dotenv(BASE_DIR.parent / ".env")
 
-# Choose a writable database path on Vercel
-configured_db = os.getenv("ECOROUTE_DB", "").strip()
-
-if configured_db:
-    DB_PATH = Path(configured_db)
-elif os.getenv("VERCEL") == "1":
-    DB_PATH = Path("/tmp/ecoroute.db")
-else:
-    DB_PATH = BASE_DIR / "ecoroute.db"
+# Supabase PostgreSQL connection
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip()
@@ -113,16 +107,60 @@ MATERIAL_LABELS = {
 }
 
 
+class PostgresCompatConnection:
+    """Compatibility layer for existing SQLite-style queries."""
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, sql, params=()):
+        normalized = sql.lstrip().upper()
+
+        if normalized.startswith("INSERT OR REPLACE INTO APPROVALS"):
+            sql = """
+                INSERT INTO approvals
+                    (request_id, approved, approved_plan_json, approved_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (request_id) DO UPDATE SET
+                    approved = EXCLUDED.approved,
+                    approved_plan_json = EXCLUDED.approved_plan_json,
+                    approved_at = EXCLUDED.approved_at
+            """
+        else:
+            sql = sql.replace(
+                "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "BIGSERIAL PRIMARY KEY",
+            )
+            sql = sql.replace("?", "%s")
+
+        return self.connection.execute(sql, params)
+
+    def executescript(self, script):
+        for statement in script.split(";"):
+            if statement.strip():
+                self.execute(statement)
+
+
 @contextmanager
 def db_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not configured")
+
+    raw_connection = psycopg.connect(
+        DATABASE_URL,
+        row_factory=dict_row,
+        connect_timeout=10,
+    )
+    connection = PostgresCompatConnection(raw_connection)
+
     try:
         yield connection
-        connection.commit()
+        raw_connection.commit()
+    except Exception:
+        raw_connection.rollback()
+        raise
     finally:
-        connection.close()
+        raw_connection.close()
 
 
 def now_iso() -> str:
