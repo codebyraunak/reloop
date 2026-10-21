@@ -297,7 +297,7 @@ def make_plan(request: RequestCreate) -> dict[str, Any]:
     }
 
 
-def request_row(row: sqlite3.Row) -> dict[str, Any]:
+def request_row(row: Any) -> dict[str, Any]:
     result = dict(row)
     result["plan"] = json.loads(result.pop("plan_json"))
     result["created_at"] = result.get("created_at")
