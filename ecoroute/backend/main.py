@@ -20,10 +20,19 @@ from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_FILE = BASE_DIR / "static" / "index.html"
-DB_PATH = Path(os.getenv("ECOROUTE_DB", BASE_DIR / "ecoroute.db"))
-
+# Load environment variables first
 load_dotenv(BASE_DIR / ".env")
 load_dotenv(BASE_DIR.parent / ".env")
+
+# Choose a writable database path on Vercel
+configured_db = os.getenv("ECOROUTE_DB", "").strip()
+
+if configured_db:
+    DB_PATH = Path(configured_db)
+elif os.getenv("VERCEL") == "1":
+    DB_PATH = Path("/tmp/ecoroute.db")
+else:
+    DB_PATH = BASE_DIR / "ecoroute.db"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip()
