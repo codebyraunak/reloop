@@ -270,6 +270,42 @@ def frontend() -> str:
         raise HTTPException(status_code=500, detail="ReLoop frontend file is missing")
     return FRONTEND_FILE.read_text(encoding="utf-8")
 
+# Serve locally bundled ReLoop photographs
+IMAGE_DIR = BASE_DIR / "static" / "images"
+
+IMAGE_FILES = {
+    "hero-ewaste.jpg",
+    "laptop.jpg",
+    "desktop.jpg",
+    "phone.jpg",
+    "television.jpg",
+    "tablet.jpg",
+    "keyboard.jpg",
+    "printer.jpg",
+    "cables.jpg",
+    "camera.jpg",
+    "audio.jpg",
+}
+
+
+@app.get("/assets/{filename}")
+def serve_image(filename: str):
+    if filename not in IMAGE_FILES:
+        raise HTTPException(
+            status_code=404,
+            detail="Image not found",
+        )
+
+    image_path = IMAGE_DIR / filename
+
+    if not image_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Image file is missing",
+        )
+
+    return FileResponse(image_path, media_type="image/jpeg")
+
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
