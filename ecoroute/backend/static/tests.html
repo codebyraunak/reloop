@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f7f8f2" />
   <meta name="description" content="ReLoop Official Test Benchmark Runner for TC1–TC4 official scenarios." />
   <title>ReLoop — Official Benchmark Test Runner</title>
+  <link rel="icon" type="image/png" href="/favicon/reloop-logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -65,13 +66,10 @@
       letter-spacing: -0.05em;
     }
     .brand-mark {
-      display: grid;
-      place-items: center;
       width: 34px;
       height: 34px;
-      background: var(--lime);
-      border-radius: 12px;
-      font-size: 1.1rem;
+      display: block;
+      object-fit: contain;
     }
     .btn {
       border: 0;
@@ -310,7 +308,7 @@
 <header>
   <div class="container nav">
     <div class="brand">
-      <span class="brand-mark">♻</span>
+      <img class="brand-mark" src="/favicon/reloop-logo.png" alt="" />
       <span>ReLoop</span>
       <span style="font-weight:400;font-size:0.9rem;color:var(--muted);margin-left:4px;">Official Tests</span>
     </div>

@@ -861,6 +861,8 @@ def test_assistant_never_submits_a_booking():
 def test_tests_page_served():
     resp = client.get("/tests")
     assert resp.status_code == 200
+    assert '<link rel="icon" type="image/png" href="/favicon/reloop-logo.png" />' in resp.text
+    assert '<img class="brand-mark" src="/favicon/reloop-logo.png" alt="" />' in resp.text
     assert "Official Benchmark Tests" in resp.text
     assert "Run All Scenarios" in resp.text
     assert "card-TC1" in resp.text
@@ -874,6 +876,24 @@ def test_tests_page_served():
     assert "encodeURIComponent(caseId)" in resp.text
     assert "fetch('/api/tests')" in resp.text
     assert "API_BASE" not in resp.text
+
+
+def test_homepage_references_reloop_favicon_and_brand_logo():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert '<link rel="icon" type="image/png" href="/favicon/reloop-logo.png" />' in response.text
+    assert response.text.count('<img class="brand-mark" src="/favicon/reloop-logo.png" alt="" />') == 2
+
+
+def test_favicon_route_serves_allowlisted_png():
+    response = client.get("/favicon/reloop-logo.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert response.content == (BACKEND_DIR / "static" / "images" / "reloop-logo.png").read_bytes()
+
+    unsupported = client.get("/favicon/other.png")
+    assert unsupported.status_code == 404
 
 
 def test_tests_page_run_all_script_targets_real_benchmark_api():

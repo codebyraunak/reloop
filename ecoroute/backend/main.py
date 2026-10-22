@@ -24,7 +24,7 @@ load_dotenv(BASE_DIR.parent / ".env")
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -56,6 +56,7 @@ logger = logging.getLogger("ecoroute.main")
 
 FRONTEND_FILE = BASE_DIR / "static" / "index.html"
 TESTS_FILE = BASE_DIR / "static" / "tests.html"
+RELOOP_LOGO_FILE = BASE_DIR / "static" / "images" / "reloop-logo.png"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip()
@@ -293,6 +294,15 @@ def tests_page():
     if not TESTS_FILE.exists():
         raise HTTPException(status_code=500, detail="ReLoop tests page template missing.")
     return TESTS_FILE.read_text(encoding="utf-8")
+
+
+@app.get("/favicon/{filename}")
+def favicon(filename: str):
+    if filename != "reloop-logo.png":
+        raise HTTPException(status_code=404, detail="Favicon not found.")
+    if not RELOOP_LOGO_FILE.is_file():
+        raise HTTPException(status_code=404, detail="Favicon not found.")
+    return FileResponse(RELOOP_LOGO_FILE, media_type="image/png")
 
 
 @app.get("/api/health")
