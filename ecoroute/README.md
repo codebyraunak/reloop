@@ -74,6 +74,7 @@ The frontend's **Scenario test bench** button also runs TC1–TC4 against the ba
 - `GET /api/health`
 - `GET /api/materials`
 - `GET /api/recyclers`
+- `GET /mock-recycler/{slug}`
 - `POST /api/assistant`
 - `POST /api/requests`
 - `GET /api/requests`
@@ -81,15 +82,15 @@ The frontend's **Scenario test bench** button also runs TC1–TC4 against the ba
 - `POST /api/requests/{request_id}/approval`
 - `POST /api/requests/{request_id}/book`
 - `POST /api/requests/{request_id}/verify`
-- `POST /api/requests/{request_id}/collection`
 - `POST /api/tests/run`
+- `POST /api/tests/run/{case_id}`
 - `GET /api/tests`
 
 ## Safety and data handling
 
-- Only item type, quantity, location and maximum fee are sent to the pickup API by the supplied frontend. Name, phone and email fields are not sent or stored by this API.
-- Human approval is required before booking. A fee above the user's limit requires explicitly accepting the exception.
+- Only item type, quantity, location and maximum fee are sent to the pickup API by the supplied frontend. Personal data is never exposed.
+- Human approval is strictly required before booking. A fee above the user's limit requires explicitly accepting the exception in the Human Approval Modal.
 - Booking submission is idempotent per request, preventing duplicate bookings on retries.
-- Verification confirms the mock booking record only. A booking reference is not evidence of physical collection.
-- Collection status requires a separate explicit confirmation and an evidence note.
-- The assistant is powered by Google Gemini (configured via `GEMINI_API_KEY` and `GEMINI_MODEL` in `.env`) using the official `google-genai` SDK with backend tool calling for detail validation, mock recycler search, fee comparison, and plan preparation. It strictly cannot book pickups without explicit human approval, and falls back gracefully to a deterministic helper if the API key is missing or unavailable.
+- Verification independently re-checks live mock recycler evidence. A booking reference is not evidence of physical collection.
+- **Strictly No Physical Collection:** The status `collected` does not exist anywhere in the application. Status wording is always *"Requested, not yet collected."*
+- The assistant operates under a bounded 6-step agent loop, validated deterministically at the backend boundary. It strictly cannot book pickups without explicit human approval.

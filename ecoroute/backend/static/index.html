@@ -500,7 +500,91 @@
     }
     @media(prefers-reduced-motion:reduce){.hero-sidecard{translate:none!important;}}
 
-</style>
+    /* Approval Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(14, 44, 31, 0.65);
+      backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .modal-overlay.open {
+      opacity: 1; pointer-events: auto;
+    }
+    .modal-content {
+      background: #fff;
+      border-radius: 24px;
+      max-width: 560px;
+      width: 100%;
+      padding: 32px;
+      box-shadow: 0 25px 60px rgba(14, 44, 31, 0.25);
+      transform: translateY(20px);
+      transition: transform 0.25s ease;
+      position: relative;
+    }
+    .modal-overlay.open .modal-content {
+      transform: translateY(0);
+    }
+    .modal-close {
+      position: absolute; top: 20px; right: 20px;
+      background: #f0f4ed; border: none; width: 32px; height: 32px;
+      border-radius: 50%; display: grid; place-items: center;
+      font-size: 1.1rem; cursor: pointer; color: var(--muted);
+      transition: 0.2s;
+    }
+    .modal-close:hover { background: #e2ecd9; color: var(--ink); }
+    .modal-item-list { margin: 12px 0; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #fbfcf9; font-size: 0.88rem; }
+    .modal-item-list li { margin-left: 18px; margin-bottom: 4px; }
+
+    /* Trace Panel */
+    .trace-panel {
+      margin-top: 18px;
+      background: #fdfefe;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px 18px;
+    }
+    .trace-step {
+      padding: 10px 12px;
+      border-left: 3px solid var(--green);
+      background: #f7faf5;
+      border-radius: 0 10px 10px 0;
+      margin-bottom: 8px;
+      font-size: 0.82rem;
+    }
+    .trace-step.error {
+      border-left-color: #dc2626;
+      background: #fef2f2;
+    }
+    .trace-step strong { color: var(--green-dark); }
+    .trace-step.error strong { color: #b91c1c; }
+    .trace-meta { color: var(--muted); font-size: 0.74rem; margin-top: 3px; }
+
+    /* Item Decisions */
+    .item-decision-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-top: 10px;
+    }
+    .status-pill {
+      display: inline-block;
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.03em;
+    }
+    .status-pill.accepted { background: #dcfce7; color: #15803d; }
+    .status-pill.rejected { background: #fee2e2; color: #b91c1c; }
+    .status-pill.unresolved { background: #fef3c7; color: #b45309; }
+    .status-pill.state { background: #e3f1d7; color: var(--green-dark); font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; }
+
+  </style>
 </head>
 <body>
     <header>
@@ -513,7 +597,10 @@
         <a href="#assistant">AI assistant</a>
         <a href="#faq">FAQs</a>
       </nav>
-      <a class="nav-cta" href="#assistant">Plan with AI <span aria-hidden="true">↗</span></a>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <a href="/tests" class="nav-cta btn-light" style="font-size:0.82rem;padding:9px 15px;">Tests (/tests) ↗</a>
+        <a class="nav-cta" href="#assistant" id="planWithAiNav">Plan with AI <span aria-hidden="true">↗</span></a>
+      </div>
       <button class="menu-toggle" id="menuToggle" aria-label="Open navigation">☰</button>
     </div>
   </header>
@@ -522,13 +609,13 @@
     <section class="hero" id="home">
       <div class="container">
         <div class="hero-card">
-          <div class="hero-image" aria-hidden="true"><img class="hero-photo" src="/assets/hero-ewaste.jpg" alt="" fetchpriority="high" decoding="async"></div>
+          <div class="hero-image" aria-hidden="true"><img class="hero-photo" src="/images/hero-ewaste.jpg" alt="" fetchpriority="high" decoding="async"></div>
           <div class="hero-content">
             <span class="eyebrow">♻ Better choices, less e-waste</span>
             <h1>Old tech.<br><span>New purpose.</span></h1>
             <p>Your unused electronics deserve a better next step. Explore compatible recycling options, understand the listed fee and prepare a pickup request with clear approval steps.</p>
             <div class="hero-actions">
-              <a class="btn" href="#assistant">Plan a pickup with AI <span aria-hidden="true">↗</span></a>
+              <a class="btn" href="#assistant" id="planWithAiHero">Plan a pickup with AI <span aria-hidden="true">↗</span></a>
               <a class="btn btn-light" href="#booking">Use pickup form</a>
             </div>
             <div class="hero-note"><span class="hero-note-check">✓</span><span>Clear fees. Evidence-led matching. Human approval before booking.</span></div>
@@ -564,16 +651,16 @@
           <label class="catalog-search" for="itemSearch"><span aria-hidden="true">⌕</span><input id="itemSearch" type="search" placeholder="Search devices…" autocomplete="off"></label>
         </div>
         <div class="items-grid" id="itemsGrid">
-          <article class="item-card" data-item="Laptops" tabindex="0" role="button" aria-label="Select Laptops"><div class="item-photo"><img src="/assets/laptop.jpg" alt="Laptop computer" loading="lazy" decoding="async"></div><div class="item-info"><h3>Laptops</h3><p>Old or damaged laptops</p><span class="item-tag">Computing</span></div></article>
-          <article class="item-card" data-item="Desktop computers" tabindex="0" role="button" aria-label="Select Desktop computers"><div class="item-photo"><img src="/assets/desktop.jpg" alt="Desktop computer setup" loading="lazy" decoding="async"></div><div class="item-info"><h3>Desktop computers</h3><p>CPU towers and components</p><span class="item-tag">Computing</span></div></article>
-          <article class="item-card" data-item="Mobile phones" tabindex="0" role="button" aria-label="Select Mobile phones"><div class="item-photo"><img src="/assets/phone.jpg" alt="Smartphone" loading="lazy" decoding="async"></div><div class="item-info"><h3>Mobile phones</h3><p>Old phones and smartphones</p><span class="item-tag">Personal tech</span></div></article>
-          <article class="item-card" data-item="Televisions" tabindex="0" role="button" aria-label="Select Televisions"><div class="item-photo"><img src="/assets/television.jpg" alt="Television" loading="lazy" decoding="async"></div><div class="item-info"><h3>Televisions</h3><p>LED and other TVs</p><span class="item-tag">Home electronics</span></div></article>
-          <article class="item-card" data-item="Tablets" tabindex="0" role="button" aria-label="Select Tablets"><div class="item-photo"><img src="/assets/tablet.jpg" alt="Tablet device" loading="lazy" decoding="async"></div><div class="item-info"><h3>Tablets</h3><p>Unused tablets and e-readers</p><span class="item-tag">Personal tech</span></div></article>
-          <article class="item-card" data-item="Keyboards and mice" tabindex="0" role="button" aria-label="Select Keyboards and mice"><div class="item-photo"><img src="/assets/keyboard.jpg" alt="Computer keyboard" loading="lazy" decoding="async"></div><div class="item-info"><h3>Keyboards & mice</h3><p>Wired and wireless accessories</p><span class="item-tag">Accessories</span></div></article>
-          <article class="item-card" data-item="Printers" tabindex="0" role="button" aria-label="Select Printers"><div class="item-photo"><img src="/assets/printer.jpg" alt="Printer" loading="lazy" decoding="async"></div><div class="item-info"><h3>Printers</h3><p>Printers and scanners</p><span class="item-tag">Office tech</span></div></article>
-          <article class="item-card" data-item="Cables and chargers" tabindex="0" role="button" aria-label="Select Cables and chargers"><div class="item-photo"><img src="/assets/cables.jpg" alt="Charging cables" loading="lazy" decoding="async"></div><div class="item-info"><h3>Cables & chargers</h3><p>Adaptors and spare cables</p><span class="item-tag">Accessories</span></div></article>
-          <article class="item-card" data-item="Cameras" tabindex="0" role="button" aria-label="Select Cameras"><div class="item-photo"><img src="/assets/camera.jpg" alt="Digital camera" loading="lazy" decoding="async"></div><div class="item-info"><h3>Cameras</h3><p>Digital cameras and devices</p><span class="item-tag">Personal tech</span></div></article>
-          <article class="item-card" data-item="Audio devices" tabindex="0" role="button" aria-label="Select Audio devices"><div class="item-photo"><img src="/assets/audio.jpg" alt="Headphones" loading="lazy" decoding="async"></div><div class="item-info"><h3>Audio devices</h3><p>Headphones and speakers</p><span class="item-tag">Audio</span></div></article>
+          <article class="item-card" data-item="Laptops" tabindex="0" role="button" aria-label="Select Laptops"><div class="item-photo"><img src="/images/laptop.jpg" alt="Laptop computer" loading="lazy" decoding="async"></div><div class="item-info"><h3>Laptops</h3><p>Old or damaged laptops</p><span class="item-tag">Computing</span></div></article>
+          <article class="item-card" data-item="Desktop computers" tabindex="0" role="button" aria-label="Select Desktop computers"><div class="item-photo"><img src="/images/desktop.jpg" alt="Desktop computer setup" loading="lazy" decoding="async"></div><div class="item-info"><h3>Desktop computers</h3><p>CPU towers and components</p><span class="item-tag">Computing</span></div></article>
+          <article class="item-card" data-item="Mobile phones" tabindex="0" role="button" aria-label="Select Mobile phones"><div class="item-photo"><img src="/images/phone.jpg" alt="Smartphone" loading="lazy" decoding="async"></div><div class="item-info"><h3>Mobile phones</h3><p>Old phones and smartphones</p><span class="item-tag">Personal tech</span></div></article>
+          <article class="item-card" data-item="Televisions" tabindex="0" role="button" aria-label="Select Televisions"><div class="item-photo"><img src="/images/television.jpg" alt="Television" loading="lazy" decoding="async"></div><div class="item-info"><h3>Televisions</h3><p>LED and other TVs</p><span class="item-tag">Home electronics</span></div></article>
+          <article class="item-card" data-item="Tablets" tabindex="0" role="button" aria-label="Select Tablets"><div class="item-photo"><img src="/images/tablet.jpg" alt="Tablet device" loading="lazy" decoding="async"></div><div class="item-info"><h3>Tablets</h3><p>Unused tablets and e-readers</p><span class="item-tag">Personal tech</span></div></article>
+          <article class="item-card" data-item="Keyboards and mice" tabindex="0" role="button" aria-label="Select Keyboards and mice"><div class="item-photo"><img src="/images/keyboard.jpg" alt="Computer keyboard" loading="lazy" decoding="async"></div><div class="item-info"><h3>Keyboards & mice</h3><p>Wired and wireless accessories</p><span class="item-tag">Accessories</span></div></article>
+          <article class="item-card" data-item="Printers" tabindex="0" role="button" aria-label="Select Printers"><div class="item-photo"><img src="/images/printer.jpg" alt="Printer" loading="lazy" decoding="async"></div><div class="item-info"><h3>Printers</h3><p>Printers and scanners</p><span class="item-tag">Office tech</span></div></article>
+          <article class="item-card" data-item="Cables and chargers" tabindex="0" role="button" aria-label="Select Cables and chargers"><div class="item-photo"><img src="/images/cables.jpg" alt="Charging cables" loading="lazy" decoding="async"></div><div class="item-info"><h3>Cables & chargers</h3><p>Adaptors and spare cables</p><span class="item-tag">Accessories</span></div></article>
+          <article class="item-card" data-item="Cameras" tabindex="0" role="button" aria-label="Select Cameras"><div class="item-photo"><img src="/images/camera.jpg" alt="Digital camera" loading="lazy" decoding="async"></div><div class="item-info"><h3>Cameras</h3><p>Digital cameras and devices</p><span class="item-tag">Personal tech</span></div></article>
+          <article class="item-card" data-item="Audio devices" tabindex="0" role="button" aria-label="Select Audio devices"><div class="item-photo"><img src="/images/audio.jpg" alt="Headphones" loading="lazy" decoding="async"></div><div class="item-info"><h3>Audio devices</h3><p>Headphones and speakers</p><span class="item-tag">Audio</span></div></article>
         </div>
         <div class="notice">Please don't put e-waste in regular household bins. Check the selected centre's rules for batteries, damaged devices and data wiping before handing items over.</div>
       </div>
@@ -644,7 +731,7 @@
             <div class="field full"><label for="itemType">What would you like to recycle? *</label><select id="itemType" name="itemType" required><option value="">Choose item</option><option>Laptops</option><option>Desktop computers</option><option>Mobile phones</option><option>Televisions</option><option>Tablets</option><option>Keyboards and mice</option><option>Printers</option><option>Cables and chargers</option><option>Cameras</option><option>Audio devices</option><option>Mixed e-waste</option></select></div>
             <div class="field"><label for="quantity">Quantity *</label><input id="quantity" name="quantity" type="number" min="1" max="500" value="1" required><span class="hint">How many items of this type?</span></div>
             <div class="field"><label for="city">Pickup city *</label><input id="city" name="city" placeholder="e.g. Mysuru" required autocomplete="address-level2"></div>
-            <div class="field"><label for="pincode">PIN code *</label><input id="pincode" name="pincode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="570001" required autocomplete="postal-code"></div>
+            <div class="field"><label for="pincode">PIN code *</label><input id="pincode" name="pincode" inputmode="numeric" pattern="[1-9][0-9]{5}" maxlength="6" placeholder="570001" required autocomplete="postal-code"></div>
             <div class="field full"><label for="maxFee">Maximum pickup fee <span class="label-optional">(₹) *</span></label><input id="maxFee" name="maxFee" type="number" min="0" max="100000" value="100" required><span class="hint">We'll flag any matching option above this amount.</span></div>
           </div>
           <div class="form-assurance"><span>⌑</span><p><strong>Privacy note</strong><br>Only item type, quantity, city, PIN code and fee limit are sent for matching. No contact details are requested by this form.</p></div>
@@ -694,12 +781,33 @@
     <div class="container">
       <div class="footer-top">
         <div><a class="brand" href="#home"><span class="brand-mark">↻</span> reloop<span style="color:var(--lime)">.</span></a><p>A clearer route for old electronics: evidence-led matching, transparent fees and approval before booking.</p></div>
-        <div class="footer-links"><a href="#collect">What we collect</a><a href="#how">How it works</a><a href="#booking">Book pickup</a><a href="#assistant">AI assistant</a><a href="#faq">FAQs</a></div>
+        <div class="footer-links">
+          <a href="#collect">What we collect</a>
+          <a href="#how">How it works</a>
+          <a href="#booking">Book pickup</a>
+          <a href="#assistant">AI assistant</a>
+          <a href="#faq">FAQs</a>
+          <a href="/tests" style="color:var(--lime);font-weight:700;">Official Benchmark Tests (/tests) ↗</a>
+        </div>
       </div>
-      <div class="footer-bottom"><span>© 2026 ReLoop</span></div>
+      <div class="footer-bottom"><span>© 2026 ReLoop · Evidence-Led Recycling Coordination</span></div>
     </div>
   </footer>
   <div class="toast" id="toast" role="status"></div>
+
+  <!-- Styled Human Approval Modal -->
+  <div class="modal-overlay" id="approvalModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-content">
+      <button class="modal-close" id="modalCloseBtn" aria-label="Close modal">✕</button>
+      <div class="kicker" style="color:var(--green)">HUMAN APPROVAL GATEWAY</div>
+      <h3 id="modalTitle" style="font-size:1.4rem;margin:8px 0 12px;">Review & Approve Pickup Plan</h3>
+      <div id="modalBody"></div>
+      <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap;">
+        <button class="btn" id="modalConfirmBtn" style="flex:1;">Confirm & Authorize Plan</button>
+        <button class="btn btn-light" id="modalCancelBtn">Cancel / Keep in Draft</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const $ = (selector) => document.querySelector(selector);
@@ -740,15 +848,27 @@
       window.toastTimer = setTimeout(() => toast.style.display = 'none', 3200);
     }
 
-    // Connected pickup workflow: only the minimum fields needed for matching are sent.
-    const API_BASE = '';
+    // Connected pickup workflow: evidence-backed and traceable
+    const API_BASE = window.location.origin;
     let activeRequestId = null;
     let activeRequest = null;
     let activeAgentInfo = null;
 
+    async function parseApiResponse(response, fallbackMsg) {
+      const text = await response.text();
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch (_) {
+        body = { detail: text || fallbackMsg };
+      }
+      return body;
+    }
+
     function apiErrorMessage(body, fallback) {
       if (!body) return fallback;
       if (typeof body.detail === 'string') return body.detail;
+      if (typeof body.message === 'string') return body.message;
       return fallback;
     }
 
@@ -774,133 +894,259 @@
       }
     }
 
+    function statusDisplayLabel(status) {
+      const s = (status || '').toLowerCase();
+      switch (s) {
+        case 'draft': return 'Draft (Requires Approval)';
+        case 'awaiting_approval': return 'Approval Required (Fee Exception / Review)';
+        case 'approved': return 'Approved (Ready to Book)';
+        case 'requested': return 'Requested, not yet collected.';
+        case 'verified': return 'Requested, not yet collected (Verified independently).';
+        case 'failed': return 'Failed';
+        case 'declined': return 'Declined';
+        case 'unresolved': return 'Unresolved (Incomplete Evidence)';
+        default: return status;
+      }
+    }
+
     function renderWorkflow(request) {
       activeRequest = request;
       activeRequestId = request.id;
       const plan = request.plan || {};
-      const selected = plan.selected_recycler;
-      const approvalNeeded = request.status === 'APPROVAL_REQUIRED';
-      const canApprove = ['DRAFT','APPROVAL_REQUIRED'].includes(request.status) && !!selected;
-      const canBook = request.status === 'APPROVED';
-      const canVerify = request.status === 'BOOKED';
+      const status = (request.status || '').toLowerCase();
+      const items = plan.items || [];
+      const totalFee = plan.total_fee ?? plan.selected_recycler?.fee ?? 0;
+      const maxFee = plan.max_fee ?? request.max_fee ?? 0;
+      const feeException = totalFee > maxFee;
+
+      const canApprove = ['draft', 'awaiting_approval', 'unresolved'].includes(status) && items.some(i => i.decision === 'accepted');
+      const canBook = status === 'approved';
+      const canVerify = ['requested', 'verified'].includes(status);
+
       const result = $('#workflowPanel');
-      const rejected = (plan.rejected_centres || []).map(r => `<li>${escapeHTML(r.recycler_name)}: ${escapeHTML(r.reason)}</li>`).join('');
-      const agentNote = activeAgentInfo ? `<div class="agent-note"><strong>${activeAgentInfo.aiPowered ? 'AI agent review' : 'Rule-based fallback'}</strong><small>${escapeHTML(activeAgentInfo.summary || '')}</small>${activeAgentInfo.toolCalled ? `<small>Tool invoked: ${escapeHTML(activeAgentInfo.toolCalled)}</small>` : ''}</div>` : '';
       result.style.display = 'block';
+
+      // Build Per-Item Decision Cards
+      let itemsHtml = '';
+      if (items.length > 0) {
+        itemsHtml = items.map(it => {
+          const isAcc = it.decision === 'accepted';
+          const pillClass = isAcc ? 'accepted' : (it.decision === 'rejected' ? 'rejected' : 'unresolved');
+          const rec = it.suggested_recycler;
+          const evidenceHtml = (it.recycler_evidence || []).map(ev => `
+            <div style="margin-top:6px;font-size:0.8rem;">
+              <strong>${escapeHTML(ev.name || 'Recycler source')}:</strong>
+              <span class="status-pill ${ev.decision === 'accepted' ? 'accepted' : (ev.decision === 'rejected' ? 'rejected' : 'unresolved')}">${escapeHTML(ev.decision)}</span>
+              <div style="margin-top:3px;">${escapeHTML(ev.evidence || ev.error || '')}</div>
+              ${ev.source_url ? `<a class="evidence-link" href="${escapeHTML(safeSourceUrl(ev.source_url))}" target="_blank" rel="noopener">Source HTML ↗</a>` : ''}
+              ${ev.retrieved_at ? `<span style="color:var(--muted);font-size:0.75rem;margin-left:6px;">(Retrieved: ${escapeHTML(ev.retrieved_at)})</span>` : ''}
+            </div>
+          `).join('');
+          return `
+            <div class="item-decision-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <strong>${escapeHTML(it.quantity)} × ${escapeHTML(it.item_label || it.item_type)}</strong>
+                <span class="status-pill ${pillClass}">${escapeHTML(it.decision)}</span>
+              </div>
+              <p style="font-size:0.84rem;color:var(--muted);">${escapeHTML(it.reason || '')}</p>
+              ${rec ? `
+                <div style="margin-top:6px;font-size:0.82rem;">
+                  <strong>Assigned centre:</strong> ${escapeHTML(rec.recycler_name)} (Fee: ₹${escapeHTML(rec.fee)})
+                </div>
+              ` : (it.source_url ? `
+                <div style="margin-top:4px;font-size:0.8rem;">
+                  <strong>Source link:</strong> <a class="evidence-link" href="${escapeHTML(safeSourceUrl(it.source_url))}" target="_blank" rel="noopener">Verified Profile ↗</a>
+                </div>
+              ` : '')}
+              ${evidenceHtml}
+            </div>
+          `;
+        }).join('');
+      } else if (plan.selected_recycler) {
+        const sel = plan.selected_recycler;
+        itemsHtml = `
+          <div class="item-decision-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong>${escapeHTML(plan.quantity || request.quantity)} × ${escapeHTML(plan.item_label || request.item_type)}</strong>
+              <span class="status-pill accepted">Accepted</span>
+            </div>
+            <p style="font-size:0.84rem;margin-top:4px;">${escapeHTML(plan.reason || '')}</p>
+            <div style="margin-top:6px;font-size:0.82rem;">
+              <strong>Assigned centre:</strong> ${escapeHTML(sel.recycler_name)} (Fee: ₹${escapeHTML(sel.fee)})
+              <div style="margin-top:3px;">
+                <strong>Source:</strong> <a class="evidence-link" href="${escapeHTML(safeSourceUrl(sel.source_url))}" target="_blank" rel="noopener">Mock Recycler Site ↗</a>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // Build Live Agent Trace Panel
+      const traces = request.agent_traces || plan.agent_trace || [];
+      let traceHtml = '';
+      if (traces.length > 0) {
+        traceHtml = `
+          <div class="trace-panel">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <strong style="font-size:0.9rem;">Live Agent Execution Trace (${traces.length} steps)</strong>
+              <span style="font-size:0.75rem;color:var(--muted);">Deterministic Bounded Loop</span>
+            </div>
+            ${traces.map(t => `
+              <div class="trace-step ${t.error ? 'error' : ''}">
+                <div><strong>Step ${escapeHTML(t.step)}:</strong> <code>${escapeHTML(t.tool)}</code></div>
+                <div style="margin-top:3px;font-size:0.8rem;">${escapeHTML(t.evidence || t.error || JSON.stringify(t.output))}</div>
+                <div class="trace-meta">Timestamp: ${escapeHTML(t.timestamp)}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
       result.innerHTML = `
-        <strong>Pickup plan · ${escapeHTML(request.id)}</strong>
-        ${agentNote}
-        <div class="workflow-detail">
-          <div><strong>Status:</strong> ${escapeHTML(request.status)}</div>
-          <div><strong>Item:</strong> ${escapeHTML(plan.quantity)} × ${escapeHTML(plan.item_label || request.item_type)}</div>
-          <div><strong>Location:</strong> ${escapeHTML(plan.location || request.location)}</div>
-          ${selected ? `<div><strong>Suggested centre:</strong> ${escapeHTML(selected.recycler_name)}</div><div><strong>Pickup fee:</strong> ₹${escapeHTML(selected.fee)} · Limit ₹${escapeHTML(plan.max_fee)}</div><div><strong>Evidence:</strong> ${escapeHTML(selected.evidence)}</div><div><strong>Source:</strong> <a href="${escapeHTML(safeSourceUrl(selected.source_url))}" target="_blank" rel="noopener">Open mock recycler source ↗</a></div>` : '<div>No compatible centre was evidenced for this request. Do not proceed until the issue is resolved.</div>'}
-          <p style="margin-top:8px">${escapeHTML(plan.reason || '')}</p>
-          ${rejected ? `<details style="margin-top:8px"><summary>Rejected centre evidence</summary><ul>${rejected}</ul></details>` : ''}
-          
-${request.booking ? `
-  <p style="margin-top:8px">
-    <strong>Booking reference:</strong>
-    ${escapeHTML(request.booking.reference)} ·
-    ${escapeHTML(request.booking.status)}
-  </p>
-
-  ${request.booking.verified_at ? `
-    <div style="margin-top:12px;padding:14px;border-radius:12px;background:#e8f5e9;border:1px solid #b7dfbd;color:#216e45">
-      <strong>✓ Booking verification: Verified successfully</strong>
-      <p style="margin-bottom:4px">
-        <strong>Verified at:</strong>
-        ${escapeHTML(request.booking.verified_at)}
-      </p>
-      <p style="margin-bottom:4px">
-        <strong>Evidence:</strong>
-        ${escapeHTML(request.booking.verification_evidence || 'Booking record checked.')}
-      </p>
-    </div>
-    <p class="hint">
-      Collection is not confirmed. A booking reference does not prove physical collection.
-    </p>
-  ` : `
-    <p class="hint">
-      Verification pending. Select Verify booking status to check the stored booking record.
-    </p>
-  `}
-` : ''}
-
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+          <div>
+            <span style="font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;">E-WASTE PICKUP PLAN</span>
+            <h3 style="font-size:1.35rem;letter-spacing:-0.02em;">${escapeHTML(request.id)}</h3>
+          </div>
+          <span class="status-pill state">${escapeHTML(statusDisplayLabel(status))}</span>
         </div>
-        <div class="workflow-actions">
-          ${canApprove ? `<button class="btn" type="button" id="approveRequestButton">Approve plan${approvalNeeded ? ' & accept fee exception' : ''}</button><button class="btn btn-light" type="button" id="declineRequestButton">Decline</button>` : ''}
-          ${canBook ? '<button class="btn" type="button" id="bookRequestButton">Submit mock booking</button>' : ''}
-          ${canVerify ? '<button class="btn btn-light" type="button" id="verifyRequestButton">Verify booking status</button>' : ''}
-          ${request.status === 'BOOKED' ? '<span class="hint">Booked does not mean collected. Collection is not confirmed.</span>' : ''}
-        </div>`;
+
+        <div class="workflow-detail">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:10px;font-size:0.85rem;margin-bottom:12px;">
+            <div><strong>Location:</strong> ${escapeHTML(plan.location || request.location || 'Mysuru')}</div>
+            <div><strong>Fee Quote:</strong> ₹${escapeHTML(totalFee)} (Limit: ₹${escapeHTML(maxFee)})</div>
+            <div><strong>Approval Status:</strong> ${request.approval ? (request.approval.approved ? 'Approved (v1.0)' : 'Declined') : 'Pending Human Approval'}</div>
+          </div>
+
+          <div style="margin-top:14px;">
+            <strong style="font-size:0.9rem;">Per-Item Recycler Decisions & Source Evidence</strong>
+            ${itemsHtml || '<p style="color:var(--muted);font-size:0.85rem;margin-top:4px;">No items matched available evidence.</p>'}
+          </div>
+
+          ${request.booking ? `
+            <div style="margin-top:14px;padding:12px;background:#eef7ea;border:1px solid #c9dec5;border-radius:12px;font-size:0.85rem;">
+              <strong>Booking Reference:</strong> <code>${escapeHTML(request.booking.reference)}</code>
+              <div style="margin-top:4px;"><strong>Status:</strong> Requested, not yet collected.</div>
+              ${request.booking.verified ? `<div style="color:var(--pass);margin-top:2px;">✓ Independently verified against live mock recycler profile.</div>` : ''}
+            </div>
+          ` : ''}
+        </div>
+
+        ${traceHtml}
+
+        <div class="workflow-actions" style="margin-top:18px;">
+          ${canApprove ? `<button class="btn" type="button" id="openApprovalModalBtn">Review & Authorize Plan${feeException ? ' (Fee Exception)' : ''} ↗</button>` : ''}
+          ${canBook ? `<button class="btn" type="button" id="bookRequestButton">Submit Mock Booking Request</button>` : ''}
+          ${canVerify ? `<button class="btn btn-light" type="button" id="verifyRequestButton">Independently Verify Booking</button>` : ''}
+          ${['requested', 'verified'].includes(status) ? `<span class="hint" style="align-self:center;">Status: Requested, not yet collected.</span>` : ''}
+        </div>
+      `;
+
       if (canApprove) {
-        $('#approveRequestButton').addEventListener('click', () => approveRequest(approvalNeeded));
-        $('#declineRequestButton').addEventListener('click', declineRequest);
+        $('#openApprovalModalBtn').addEventListener('click', () => openApprovalModal(feeException, totalFee, maxFee));
       }
       if (canBook) $('#bookRequestButton').addEventListener('click', bookRequest);
       if (canVerify) $('#verifyRequestButton').addEventListener('click', verifyRequest);
-      result.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+      result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    async function approveRequest(acceptFeeException) {
+    function openApprovalModal(feeException, totalFee, maxFee) {
+      if (!activeRequest) return;
+      const modal = $('#approvalModal');
+      const body = $('#modalBody');
+      const plan = activeRequest.plan || {};
+      const items = plan.items || [];
+
+      const itemsList = items.map(i => `<li><strong>${escapeHTML(i.quantity)} × ${escapeHTML(i.item_label || i.item_type)}:</strong> ${escapeHTML(i.decision)} (${escapeHTML(i.suggested_recycler?.recycler_name || 'No centre')})</li>`).join('') || `<li>${escapeHTML(plan.quantity)} × ${escapeHTML(plan.item_label || activeRequest.item_type)}</li>`;
+
+      body.innerHTML = `
+        <p style="font-size:0.88rem;color:var(--muted);margin-bottom:12px;">
+          Review the synthesized pickup details before giving explicit human authorization.
+          Nothing is booked until you approve.
+        </p>
+        <div class="modal-item-list">
+          <div><strong>Pickup Request ID:</strong> ${escapeHTML(activeRequest.id)}</div>
+          <div><strong>Destination:</strong> ${escapeHTML(plan.location || activeRequest.location)}</div>
+          <div><strong>Total Quoted Fee:</strong> ₹${escapeHTML(totalFee)} (Your limit: ₹${escapeHTML(maxFee)})</div>
+          <ul style="margin-top:8px;">${itemsList}</ul>
+        </div>
+        ${feeException ? `
+          <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:0.82rem;color:#92400e;margin:12px 0;">
+            <strong>⚠️ Fee Exception:</strong> The proposed pickup fee of ₹${escapeHTML(totalFee)} exceeds your limit of ₹${escapeHTML(maxFee)}.
+            By approving, you explicitly accept this fee exception.
+          </div>
+        ` : ''}
+        <p class="hint" style="margin-top:10px;">
+          Safety guarantee: Authorizing this plan stores an immutable approved snapshot. A booking request never implies physical collection.
+        </p>
+      `;
+
+      modal.classList.add('open');
+
+      $('#modalConfirmBtn').onclick = async () => {
+        modal.classList.remove('open');
+        await executeApproval(true, feeException);
+      };
+      $('#modalCancelBtn').onclick = () => {
+        modal.classList.remove('open');
+        showToast('Plan kept in draft state. No booking submitted.');
+      };
+      $('#modalCloseBtn').onclick = () => {
+        modal.classList.remove('open');
+      };
+    }
+
+    async function executeApproval(approved, acceptFeeException) {
       if (!activeRequestId) return;
-      const message = acceptFeeException
-        ? 'This pickup fee exceeds the limit you entered. Do you explicitly approve this higher fee and the proposed mock booking?'
-        : 'Approve this pickup plan? The mock booking will still require a separate action.';
-      if (!window.confirm(message)) return;
       try {
         const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/approval`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({approved:true, accept_fee_exception:acceptFeeException})
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approved, accept_fee_exception: acceptFeeException })
         });
-        const body = await response.json();
+        const body = await parseApiResponse(response, 'Approval failed.');
         if (!response.ok) throw new Error(apiErrorMessage(body, 'Approval failed.'));
-        showToast('Plan approved. Booking has not been submitted yet.');
+        showToast('Pickup plan authorized. You can now submit the mock booking request.');
         renderWorkflow(body);
-      } catch (error) { showToast(error.message || 'Could not approve the plan.'); }
-    }
-
-    async function declineRequest() {
-      if (!activeRequestId || !window.confirm('Decline this pickup plan?')) return;
-      try {
-        const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/approval`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({approved:false, accept_fee_exception:false})
-        });
-        const body = await response.json();
-        if (!response.ok) throw new Error(apiErrorMessage(body, 'Could not decline request.'));
-        renderWorkflow(body);
-      } catch (error) { showToast(error.message || 'Could not decline the plan.'); }
+      } catch (err) {
+        showToast(err.message || 'Could not approve the plan.');
+      }
     }
 
     async function bookRequest() {
-      if (!activeRequestId || !window.confirm('Submit this mock pickup booking? This does not contact a real recycler.')) return;
+      if (!activeRequestId) return;
       try {
-        const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/book`, {method:'POST'});
-        const body = await response.json();
+        const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/book`, { method: 'POST' });
+        const body = await parseApiResponse(response, 'Booking failed.');
         if (!response.ok) throw new Error(apiErrorMessage(body, 'Booking failed.'));
+
         const detailResponse = await fetch(`${API_BASE}/api/requests/${activeRequestId}`);
-        const detail = await detailResponse.json();
-        detail.booking = body;
-        showToast(`Mock booking submitted: ${body.reference}. Not collected.`);
+        const detail = await parseApiResponse(detailResponse, 'Could not refresh booking.');
+        showToast(`Mock booking submitted: ${body.reference}. Requested, not yet collected.`);
         renderWorkflow(detail);
-      } catch (error) { showToast(error.message || 'Could not submit booking.'); }
+      } catch (err) {
+        showToast(err.message || 'Could not submit booking.');
+      }
     }
 
     async function verifyRequest() {
       if (!activeRequestId) return;
       try {
-        const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/verify`, {method:'POST'});
-        const body = await response.json();
+        const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/verify`, { method: 'POST' });
+        const body = await parseApiResponse(response, 'Verification failed.');
         if (!response.ok) throw new Error(apiErrorMessage(body, 'Verification failed.'));
+
         const detailResponse = await fetch(`${API_BASE}/api/requests/${activeRequestId}`);
-        const detail = await detailResponse.json();
+        const detail = await parseApiResponse(detailResponse, 'Could not refresh request.');
+        showToast(`Independently verified booking ${body.reference}. Requested, not yet collected.`);
         renderWorkflow(detail);
-        showToast(`Verified booking ${body.reference}. Collection confirmed: no.`);
-      } catch (error) { showToast(error.message || 'Could not verify booking.'); }
+      } catch (err) {
+        showToast(err.message || 'Verification could not be completed.');
+      }
     }
 
+    // Structured form submission
     $('#pickupForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -909,6 +1155,7 @@ ${request.booking ? `
       const itemLabel = String(data.get('itemType') || '');
       const itemType = materialApiId(itemLabel);
       const result = $('#formResult');
+
       if (!itemType) {
         result.style.display = 'block';
         result.textContent = 'This item type is not supported by the demo matching service yet.';
@@ -916,47 +1163,25 @@ ${request.booking ? `
       }
       const city = String(data.get('city') || '').trim();
       const pincode = String(data.get('pincode') || '').trim();
-      const location = [city, pincode].filter(Boolean).join(' ');
       const quantity = Number(data.get('quantity'));
       const maxFee = Number(data.get('maxFee'));
+
       result.style.display = 'block';
-      result.textContent = 'ReLoop AI is reviewing your items and budget…';
-      activeAgentInfo = null;
-      let aiResult = null;
-      try {
-        const prompt = `Prepare a pickup plan for ${quantity} ${itemLabel} in ${location}, with a maximum pickup fee of INR ${maxFee}. Inspect the permitted mock recycler records, check acceptance and fees, identify source evidence and unresolved issues. Do not book anything. Human approval is required.`;
-        const agentResponse = await fetch(`${API_BASE}/api/assistant`, {
-          method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:prompt})
-        });
-        const agentBody = await agentResponse.json();
-        if (!agentResponse.ok) throw new Error(apiErrorMessage(agentBody, 'Agent review was unavailable.'));
-        aiResult = agentBody;
-      } catch (error) {
-        aiResult = {ai_powered:false, fallback_used:true, error:error.message || 'Agent endpoint unavailable'};
-      }
-      activeAgentInfo = {
-        aiPowered: aiResult?.ai_powered === true,
-        toolCalled: aiResult?.tool_called || null,
-        summary: aiResult?.ai_powered === true
-          ? (aiResult.tool_called ? 'Gemini responded and invoked a backend tool. The matching and approval rules below are enforced by the backend.' : 'Gemini responded, but no tool call was reported. The pickup match below is evaluated by deterministic backend rules.')
-          : `Gemini could not complete the review (${aiResult?.error || 'fallback mode'}). The backend will still evaluate the mock records using deterministic rules.`
-      };
-      result.textContent = activeAgentInfo.aiPowered
-        ? 'AI review complete. ReLoop is validating the recycler match and preparing your pickup plan…'
-        : 'AI unavailable or in fallback mode. ReLoop is checking the mock records with deterministic rules…';
+      result.textContent = 'ReLoop AI agent is gathering recycler evidence and comparing rules…';
+
       try {
         const response = await fetch(`${API_BASE}/api/requests`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({item_type:itemType, quantity, location, max_fee:maxFee})
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ item_type: itemType, quantity, city, pincode, max_fee: maxFee })
         });
-        const body = await response.json();
-        if (!response.ok) throw new Error(apiErrorMessage(body, 'Could not create pickup plan.'));
-        result.textContent = activeAgentInfo.aiPowered
-          ? `AI-assisted review finished. Pickup plan ${body.id} is ready. Please inspect the evidence and approve it before booking.`
-          : `Pickup plan ${body.id} is ready using backend decision rules. Gemini did not complete the review; inspect the evidence before approving.`;
+        const body = await parseApiResponse(response, 'Could not create pickup plan.');
+        if (!response.ok) throw new Error(apiErrorMessage(body, 'Pickup plan creation failed.'));
+
+        result.textContent = `Pickup plan ${body.id} synthesized. Review evidenced centre matches and approve before booking.`;
         renderWorkflow(body);
-      } catch (error) {
-        result.textContent = `The pickup service could not be reached: ${error.message}. No booking has been made.`;
+      } catch (err) {
+        result.textContent = `Service error: ${err.message}. No booking has been made.`;
       }
     });
 
@@ -964,13 +1189,14 @@ ${request.booking ? `
       return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     }
 
-    // The chat calls the backend agent. It can prepare details but cannot submit a booking.
+    // AI Assistant Chat & Prefill
     const chatMessages = $('#chatMessages');
     const materialLabels = {
       laptop:'Laptops', mobile_phone:'Mobile phones', desktop_computer:'Desktop computers',
       television:'Televisions', tablet:'Tablets', keyboard_mouse:'Keyboards and mice',
       printer:'Printers', cable_charger:'Cables and chargers', camera:'Cameras', audio_device:'Audio devices', mixed_ewaste:'Mixed e-waste'
     };
+
     function addBubble(text, who) {
       const bubble = document.createElement('div');
       bubble.className = 'bubble ' + who;
@@ -979,6 +1205,7 @@ ${request.booking ? `
       chatMessages.scrollTop = chatMessages.scrollHeight;
       return bubble;
     }
+
     function addPlannerAction(body) {
       if (!body || !body.item_type || !Object.prototype.hasOwnProperty.call(materialLabels, String(body.item_type).toLowerCase())) return;
       const actions = document.createElement('div');
@@ -994,64 +1221,83 @@ ${request.booking ? `
         if (opt) select.value = opt.value;
         if (body.quantity && $('#quantity')) $('#quantity').value = body.quantity;
         if (body.max_fee !== undefined && body.max_fee !== null && $('#maxFee')) $('#maxFee').value = body.max_fee;
-        const loc = String(body.location || '');
-        const pin = loc.match(/\b\d{6}\b/);
-        if (pin && $('#pincode')) $('#pincode').value = pin[0];
-        if (loc && $('#city')) $('#city').value = loc.replace(/\b\d{6}\b/, '').trim();
-        $('#booking').scrollIntoView({behavior:'smooth'});
-        showToast('Details copied into the pickup planner. Review them and build your plan.');
+        if (body.city && $('#city')) $('#city').value = body.city;
+        if (body.pincode && $('#pincode')) $('#pincode').value = body.pincode;
+        $('#booking').scrollIntoView({ behavior: 'smooth' });
+        showToast('Details copied into the pickup planner. Review and build your plan.');
       });
       actions.appendChild(button);
       chatMessages.appendChild(actions);
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
+
     async function sendChat(message) {
       const trimmed = message.trim();
       if (!trimmed) return;
       addBubble(trimmed, 'user');
       $('#chatInput').value = '';
+
       try {
-        const response = await fetch(`${API_BASE}/api/assistant`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:trimmed})});
-        const body = await response.json();
+        const response = await fetch(`${API_BASE}/api/assistant`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: trimmed })
+        });
+        const body = await parseApiResponse(response, 'Assistant request failed.');
         if (!response.ok) throw new Error(apiErrorMessage(body, 'Assistant request failed.'));
+
         const statusEl = $('#chatStatus');
         const disclaimerEl = $('#chatDisclaimer');
         if (body.ai_powered) {
-          if (statusEl) statusEl.innerHTML = '<span class="online-dot"></span>Gemini response received';
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot"></span>Gemini AI Active';
           if (disclaimerEl) disclaimerEl.textContent = body.tool_called
             ? `Backend tool invoked: ${body.tool_called}. Review details before creating a pickup plan.`
-            : 'Gemini replied but did not report a tool call. The pickup planner validates materials and fees separately.';
+            : 'Gemini replied. The pickup planner validates materials and fees separately.';
         } else if (body.fallback_used) {
-          if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Fallback mode';
-          if (disclaimerEl) disclaimerEl.textContent = 'Gemini did not complete this response. The backend can still use deterministic rules to prepare a clearly labelled mock plan.';
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Rule-based Fallback';
+          if (disclaimerEl) disclaimerEl.textContent = 'Deterministic fallback mode active. ReLoop enforces all matching rules deterministically.';
         }
-        addBubble(body.reply || 'I received your request, but no response text was returned.', 'bot');
+        addBubble(body.reply || 'Request understood. No booking has been made yet.', 'bot');
         addPlannerAction(body);
-      } catch (error) {
-        addBubble('I could not reach the pickup service just now. Please try again shortly. No booking has been made.', 'bot');
+      } catch (err) {
+        addBubble('I could not reach the pickup service. Please try again. No booking has been made.', 'bot');
       }
     }
+
     $('#chatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($('#chatInput').value); });
     $$('.suggestion').forEach(button => button.addEventListener('click', () => sendChat(button.dataset.prompt)));
 
-    // Reflect the actual backend configuration without pretending a key proves API connectivity.
-    fetch(`${API_BASE}/api/health`).then(response => {
-      if (!response.ok) throw new Error('Health check failed');
-      return response.json();
-    }).then(data => {
-      const statusEl = $('#chatStatus');
-      const disclaimerEl = $('#chatDisclaimer');
-      if (data && data.gemini_configured) {
-        if (statusEl) statusEl.innerHTML = '<span class="online-dot"></span>Gemini configured';
-        if (disclaimerEl) disclaimerEl.textContent = 'Gemini is configured on the server. Send a message to verify a live response.';
-      } else {
-        if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Fallback mode';
-        if (disclaimerEl) disclaimerEl.textContent = 'The server is using deterministic fallback responses until Gemini is configured.';
+    // "Plan with AI" buttons prefill prompt without auto-submitting
+    function prefillAiAssistant() {
+      const input = $('#chatInput');
+      if (input) {
+        input.value = 'I have 1 old laptop in Mysuru and my budget is ₹100';
+        $('#assistant').scrollIntoView({ behavior: 'smooth' });
+        input.focus();
+        showToast('Example prompt loaded. Press Send to consult ReLoop AI.');
       }
-    }).catch(() => {
-      const statusEl = $('#chatStatus');
-      if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Service status unavailable';
-    });
+    }
+    $('#planWithAiNav')?.addEventListener('click', (e) => { e.preventDefault(); prefillAiAssistant(); });
+    $('#planWithAiHero')?.addEventListener('click', (e) => { e.preventDefault(); prefillAiAssistant(); });
+
+    // Health check initialization
+    fetch(`${API_BASE}/api/health`)
+      .then(r => parseApiResponse(r, 'Health check failed'))
+      .then(data => {
+        const statusEl = $('#chatStatus');
+        const disclaimerEl = $('#chatDisclaimer');
+        if (data && data.gemini_configured) {
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot"></span>Gemini AI Active';
+          if (disclaimerEl) disclaimerEl.textContent = 'Gemini AI is configured on the server. Send a message to get started.';
+        } else {
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Rule-based Fallback Active';
+          if (disclaimerEl) disclaimerEl.textContent = 'Deterministic fallback mode active. Human approval is strictly required before any booking.';
+        }
+      })
+      .catch(() => {
+        const statusEl = $('#chatStatus');
+        if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Service Status Offline';
+      });
   </script>
 
 <script>

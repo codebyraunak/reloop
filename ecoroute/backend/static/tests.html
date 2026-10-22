@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f7f8f2" />
+  <meta name="description" content="ReLoop Official Test Benchmark Runner for TC1–TC4 official scenarios." />
+  <title>ReLoop — Official Benchmark Test Runner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #18352d;
+      --muted: #65756e;
+      --green: #2d7657;
+      --green-dark: #205941;
+      --lime: #d7f36a;
+      --cream: #f7f8f2;
+      --white: #fff;
+      --line: #e3e9df;
+      --soft: #edf4e8;
+      --orange: #f1a66a;
+      --red: #b91c1c;
+      --pass: #15803d;
+      --shadow: 0 18px 50px rgba(27,67,49,.08);
+      --radius: 20px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "DM Sans", sans-serif;
+      background: var(--cream);
+      color: var(--ink);
+      line-height: 1.6;
+      padding-bottom: 80px;
+    }
+    h1, h2, h3, .brand {
+      font-family: "Manrope", sans-serif;
+      letter-spacing: -0.03em;
+    }
+    a { color: inherit; text-decoration: none; }
+    .container { width: min(1120px, 92%); margin: auto; }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(247,248,242,.92);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav {
+      height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .brand {
+      font-size: 1.45rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: -0.05em;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      background: var(--lime);
+      border-radius: 12px;
+      font-size: 1.1rem;
+    }
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 20px;
+      background: var(--green);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.88rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .btn:hover {
+      background: var(--green-dark);
+      transform: translateY(-1px);
+    }
+    .btn-light {
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    .btn-light:hover {
+      background: var(--soft);
+    }
+    .btn-sm {
+      padding: 8px 14px;
+      font-size: 0.8rem;
+    }
+
+    .hero {
+      padding: 48px 0 32px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #e3f1d7;
+      color: var(--green-dark);
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 4vw, 3.2rem);
+      line-height: 1.15;
+      margin-bottom: 12px;
+    }
+    .hero p {
+      color: var(--muted);
+      max-width: 680px;
+      font-size: 1.02rem;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+
+    .test-grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 28px;
+    }
+    .test-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 26px 28px;
+      box-shadow: var(--shadow);
+      transition: 0.2s;
+    }
+    .test-card:hover {
+      border-color: #cbd8ca;
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .case-badge {
+      display: inline-block;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: #eff5ea;
+      color: var(--green-dark);
+      padding: 4px 10px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .card-head h3 {
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+    .card-head p {
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .result-box {
+      margin-top: 18px;
+      background: #fbfcf9;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      display: none;
+    }
+    .result-box.active {
+      display: block;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 800;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+    .status-badge.pass {
+      background: #dcfce7;
+      color: var(--pass);
+    }
+    .status-badge.fail {
+      background: #fee2e2;
+      color: var(--red);
+    }
+    .status-badge.running {
+      background: #fef3c7;
+      color: #b45309;
+    }
+    .status-badge.error {
+      background: #fee2e2;
+      color: var(--red);
+    }
+    button:disabled {
+      cursor: wait;
+      opacity: .65;
+      transform: none !important;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px 20px;
+      font-size: 0.85rem;
+      margin-top: 10px;
+    }
+    .detail-item strong {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 2px;
+    }
+    .code-block {
+      font-family: "JetBrains Mono", monospace;
+      background: #f0f4ee;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      overflow-x: auto;
+      max-height: 120px;
+      margin-top: 4px;
+    }
+    .explanation {
+      grid-column: 1 / -1;
+      background: #f4f8f2;
+      border-left: 3px solid var(--green);
+      padding: 10px 14px;
+      border-radius: 0 8px 8px 0;
+      margin-top: 6px;
+    }
+    .evidence-link {
+      color: var(--green);
+      font-weight: 700;
+      text-decoration: underline;
+    }
+
+    .history-card {
+      margin-top: 44px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 26px 28px;
+      box-shadow: var(--shadow);
+    }
+    .history-card h2 {
+      font-size: 1.35rem;
+      margin-bottom: 16px;
+    }
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .history-table th {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 2px solid var(--line);
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .history-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .history-table tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 768px) {
+      .detail-grid { grid-template-columns: 1fr; }
+      .card-head { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <div class="brand">
+      <span class="brand-mark">♻</span>
+      <span>ReLoop</span>
+      <span style="font-weight:400;font-size:0.9rem;color:var(--muted);margin-left:4px;">Official Tests</span>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <a href="/" class="btn btn-light btn-sm">← Back to App</a>
+      <button class="btn btn-sm" id="runAllBtn">Run All Scenarios</button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <div class="hero">
+    <div class="eyebrow">Evidence-Backed Verification Suite</div>
+    <h1>Official Benchmark Tests</h1>
+    <p>
+      Run TC1 through TC4 against ReLoop's backend and synthetic recycler HTML sources.
+      Battery decisions are centre-specific: PaperBack rejects batteries, while another recycler may accept them.
+    </p>
+    <div class="hero-actions">
+      <button class="btn" id="runAllBtn2">Run All Scenarios</button>
+      <button class="btn btn-light" id="refreshHistoryBtn">Refresh Run History</button>
+    </div>
+    <p id="pageStatus" role="status" aria-live="polite" style="margin-top:14px;color:var(--muted);font-size:.88rem;"></p>
+  </div>
+
+  <div class="test-grid">
+    <!-- TC1 -->
+    <div class="test-card" id="card-TC1">
+      <div class="card-head">
+        <div>
+          <span class="case-badge">TC1</span>
+          <h3>Laptop accepted</h3>
+          <p>Input: 1 laptop, Mysuru 570001, fee limit ₹100. Expected: a draft with fetched acceptance evidence.</p>
+        </div>
+        <button class="btn btn-sm" onclick="runCase('TC1')">Run TC1</button>
+      </div>
+      <div class="result-box" id="result-TC1"></div>
+    </div>
+
+    <!-- TC2 -->
+    <div class="test-card" id="card-TC2">
+      <div class="card-head">
+        <div>
+          <span class="case-badge">TC2</span>
+          <h3>Paper accepted by PaperBack; battery rejected by PaperBack</h3>
+          <p>Input: 1 paper and 1 battery. Expected: PaperBack's fetched HTML accepts paper and rejects batteries. This is centre-specific: another recycler may accept batteries.</p>
+        </div>
+        <button class="btn btn-sm" onclick="runCase('TC2')">Run TC2</button>
+      </div>
+      <div class="result-box" id="result-TC2"></div>
+    </div>
+
+    <!-- TC3 -->
+    <div class="test-card" id="card-TC3">
+      <div class="card-head">
+        <div>
+          <span class="case-badge">TC3</span>
+          <h3>Fee exceeds the user's limit and requires explicit approval</h3>
+          <p>Input: laptop in Mysuru with a ₹10 limit. Expected: booking is blocked until human approval explicitly accepts the fee exception.</p>
+        </div>
+        <button class="btn btn-sm" onclick="runCase('TC3')">Run TC3</button>
+      </div>
+      <div class="result-box" id="result-TC3"></div>
+    </div>
+
+    <!-- TC4 -->
+    <div class="test-card" id="card-TC4">
+      <div class="card-head">
+        <div>
+          <span class="case-badge">TC4</span>
+          <h3>Booking submitted and verified, never reported as collected</h3>
+          <p>Exercise create → approve → book → verify. Expected: simulated booking verification succeeds; physical collection is not claimed.</p>
+        </div>
+        <button class="btn btn-sm" onclick="runCase('TC4')">Run TC4</button>
+      </div>
+      <div class="result-box" id="result-TC4"></div>
+    </div>
+  </div>
+
+  <!-- Run History -->
+  <div class="history-card">
+    <h2>Persisted Test Run History</h2>
+    <div style="overflow-x:auto;">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Case</th>
+            <th>Outcome</th>
+            <th>Actual Result</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="5" style="color:var(--muted);text-align:center;">Loading history...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+  const CASE_IDS = ['TC1', 'TC2', 'TC3', 'TC4'];
+  const runButtons = [...document.querySelectorAll('.test-card button'), document.getElementById('runAllBtn'), document.getElementById('runAllBtn2')];
+  let isRunning = false;
+
+  function escapeHTML(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function setRunning(running) {
+    isRunning = running;
+    runButtons.forEach(button => { button.disabled = running; });
+  }
+
+  function setLoading(caseId, message) {
+    const box = document.getElementById(`result-${caseId}`);
+    box.className = 'result-box active';
+    box.innerHTML = `<div class="status-badge running">⏳ ${escapeHTML(message)}</div><p style="font-size:0.85rem;color:var(--muted)">Waiting for the backend benchmark result…</p>`;
+  }
+
+  function showError(caseId, message) {
+    const box = document.getElementById(`result-${caseId}`);
+    box.className = 'result-box active';
+    box.innerHTML = `<div class="status-badge error">ERROR</div><p style="color:var(--red);font-size:0.85rem;">${escapeHTML(message)}</p>`;
+  }
+
+  async function postBenchmark(path) {
+    const resp = await fetch(path, { method: 'POST' });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(data.detail || `Benchmark request failed (HTTP ${resp.status})`);
+    }
+    return data;
+  }
+
+  async function runCase(caseId) {
+    if (isRunning) return;
+    setRunning(true);
+    document.getElementById('pageStatus').textContent = `Running ${caseId}…`;
+    setLoading(caseId, `Running ${caseId}`);
+    try {
+      const data = await postBenchmark(`/api/tests/run/${encodeURIComponent(caseId)}`);
+      renderCaseResult(caseId, data);
+      document.getElementById('pageStatus').textContent = data.passed === true
+        ? `${caseId} completed: backend reported PASS.`
+        : `${caseId} completed: backend reported FAIL.`;
+      await loadHistory();
+    } catch (err) {
+      showError(caseId, err.message || 'Unable to run benchmark.');
+      document.getElementById('pageStatus').textContent = `${caseId} could not be completed.`;
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function formatEvidence(value) {
+    const json = escapeHTML(JSON.stringify(value ?? {}, null, 2));
+    const links = [];
+    const timestamps = [];
+    function collect(item) {
+      if (Array.isArray(item)) {
+        item.forEach(collect);
+      } else if (item && typeof item === 'object') {
+        for (const [key, nested] of Object.entries(item)) {
+          if (key === 'source_url' && typeof nested === 'string') links.push(nested);
+          if (key === 'retrieved_at' && typeof nested === 'string') timestamps.push(nested);
+          collect(nested);
+        }
+      }
+    }
+    collect(value);
+    const uniqueLinks = [...new Set(links)];
+    const uniqueTimestamps = [...new Set(timestamps)];
+    const linkMarkup = uniqueLinks.map(url => {
+      let safeUrl;
+      try {
+        const parsed = new URL(url, window.location.href);
+        if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+        safeUrl = escapeHTML(parsed.href);
+      } catch (_) {
+        return '';
+      }
+      return `<a class="evidence-link" href="${safeUrl}" target="_blank" rel="noopener">Open source profile ↗</a>`;
+    }).filter(Boolean).join('<br>');
+    const timestampMarkup = uniqueTimestamps.length
+      ? `<div class="detail-item"><strong>Evidence retrieval timestamp${uniqueTimestamps.length > 1 ? 's' : ''}</strong><div>${uniqueTimestamps.map(escapeHTML).join('<br>')}</div></div>`
+      : '';
+    return `<pre class="code-block">${json}</pre>${linkMarkup ? `<div class="detail-item"><strong>Source URL${uniqueLinks.length > 1 ? 's' : ''}</strong>${linkMarkup}</div>` : ''}${timestampMarkup}`;
+  }
+
+  function renderCaseResult(caseId, res) {
+    const box = document.getElementById(`result-${caseId}`);
+    box.className = 'result-box active';
+    const isPass = res.passed === true;
+    box.innerHTML = `
+      <div class="status-badge ${isPass ? 'pass' : 'fail'}">
+        ${isPass ? '✓ PASSED' : '✕ FAILED'}
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <strong>Expected</strong>
+          <div>${escapeHTML(res.expected)}</div>
+        </div>
+        <div class="detail-item">
+          <strong>Actual Result</strong>
+          <div>${escapeHTML(res.actual)}</div>
+        </div>
+        <div class="detail-item">
+          <strong>Input</strong>
+          <pre class="code-block">${escapeHTML(JSON.stringify(res.input, null, 2))}</pre>
+        </div>
+        <div class="detail-item">
+          <strong>Relevant Evidence</strong>
+          ${formatEvidence(res.evidence)}
+        </div>
+        <div class="detail-item">
+          <strong>Execution Timestamp</strong>
+          <div>${escapeHTML(res.timestamp)}</div>
+        </div>
+        <div class="explanation">
+          <strong>Explanation:</strong> ${escapeHTML(res.explanation || '')}
+        </div>
+      </div>
+    `;
+  }
+
+  async function runAll() {
+    if (isRunning) return;
+    setRunning(true);
+    document.getElementById('pageStatus').textContent = 'Running all four backend scenarios…';
+    CASE_IDS.forEach(caseId => setLoading(caseId, `Running ${caseId}`));
+    try {
+      const data = await postBenchmark('/api/tests/run');
+      if (!Array.isArray(data.results)) {
+        throw new Error('Backend returned an invalid Run All result.');
+      }
+      data.results.forEach(result => {
+        if (CASE_IDS.includes(result.case_id)) renderCaseResult(result.case_id, result);
+      });
+      const completed = new Set(data.results.map(result => result.case_id));
+      CASE_IDS.filter(caseId => !completed.has(caseId)).forEach(caseId => {
+        showError(caseId, 'The backend omitted this scenario from the Run All result.');
+      });
+      document.getElementById('pageStatus').textContent =
+        `Run All completed: backend reported ${data.passed} of ${data.total} scenarios passed.`;
+      await loadHistory();
+    } catch (err) {
+      CASE_IDS.forEach(caseId => showError(caseId, err.message || 'Unable to run all benchmarks.'));
+      document.getElementById('pageStatus').textContent = 'Run All could not be completed.';
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  document.getElementById('runAllBtn').addEventListener('click', runAll);
+  document.getElementById('runAllBtn2').addEventListener('click', runAll);
+  document.getElementById('refreshHistoryBtn').addEventListener('click', loadHistory);
+
+  async function loadHistory() {
+    const tbody = document.getElementById('historyBody');
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;">Loading history…</td></tr>';
+    try {
+      const resp = await fetch('/api/tests');
+      if (!resp.ok) throw new Error(`History request failed (HTTP ${resp.status})`);
+      const runs = await resp.json();
+      if (!runs.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;">No test runs persisted yet. Click Run All to execute.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = runs.map(r => `
+        <tr>
+          <td>#${escapeHTML(r.id)}</td>
+          <td><strong>${escapeHTML(r.case_id)}</strong></td>
+          <td><span class="status-badge ${r.passed ? 'pass' : 'fail'}" style="margin:0;padding:2px 8px;font-size:0.7rem;">${r.passed ? 'PASS' : 'FAIL'}</span></td>
+          <td>${escapeHTML(r.actual)}</td>
+          <td style="color:var(--muted);font-size:0.78rem;">${escapeHTML(r.created_at)}</td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red);text-align:center;">Unable to load test history: ${escapeHTML(err.message)}</td></tr>`;
+    }
+  }
+
+  loadHistory();
+</script>
+
+</body>
+</html>

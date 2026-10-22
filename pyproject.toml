@@ -1,8 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "reloop-ecoroute"
-version = "0.1.0"
-description = "ReLoop E-waste and Recycling Pickup Coordinator"
-requires-python = ">=3.12"
+version = "1.0.0"
+description = "ReLoop — Evidence-based E-waste & Recycling Pickup Coordinator"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "ReLoop Team"}
+]
 dependencies = [
     "fastapi>=0.110,<1.0",
     "uvicorn[standard]>=0.27,<1.0",
@@ -10,8 +19,16 @@ dependencies = [
     "httpx>=0.27,<1.0",
     "python-dotenv>=1.0.0",
     "google-genai>=1.2.0",
-    "psycopg[binary]>=3.2,<4.0",
+    "gunicorn>=21.2.0",
+    "psycopg[binary]>=3.1.0",
+    "beautifulsoup4>=4.12.0",
 ]
 
-[tool.vercel]
-entrypoint = "ecoroute.backend.main:app"
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0,<10.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["ecoroute/backend/tests"]
+pythonpath = ["ecoroute/backend"]

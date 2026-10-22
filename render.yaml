@@ -10,8 +10,12 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.11
+        value: 3.11.9
       - key: GEMINI_MODEL
         value: gemini-flash-lite-latest
       - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: PUBLIC_BASE_URL
         sync: false
