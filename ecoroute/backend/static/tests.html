@@ -552,7 +552,7 @@
   async function runAll() {
     if (isRunning) return;
     setRunning(true);
-    document.getElementById('pageStatus').textContent = 'Running all four backend scenarios…';
+    document.getElementById('pageStatus').textContent = 'Running official scenarios and the TC5 bonus…';
     CASE_IDS.forEach(caseId => setLoading(caseId, `Running ${caseId}`));
     try {
       const data = await postBenchmark('/api/tests/run');

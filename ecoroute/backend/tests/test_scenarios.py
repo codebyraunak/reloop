@@ -1157,6 +1157,7 @@ def test_tests_page_run_all_script_targets_real_benchmark_api():
     assert page.status_code == 200
     assert "postBenchmark('/api/tests/run')" in page.text
     assert "TC5 · BONUS" in page.text
+    assert "Running official scenarios and the TC5 bonus…" in page.text
 
     response = client.post("/api/tests/run")
     assert response.status_code == 200
