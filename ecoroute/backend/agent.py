@@ -115,9 +115,18 @@ def extract_assistant_intent(message: str) -> dict[str, Any]:
                 except ValueError:
                     pass
             qty = max(1, min(500, qty))
-            # Don't add duplicate item_types
-            if not any(i["item_type"] == item_type for i in extracted_items):
+            # Synonyms in compound phrases (e.g. "3 mobile phones") can
+            # independently match the same material. Keep one entry and its
+            # strongest quantity match rather than retaining the first alias.
+            existing_item = next(
+                (item for item in extracted_items if item["item_type"] == item_type),
+                None,
+            )
+            if existing_item is None:
                 extracted_items.append({"item_type": item_type, "quantity": qty, "matched_phrase": match.group(0)})
+            elif qty > existing_item["quantity"]:
+                existing_item["quantity"] = qty
+                existing_item["matched_phrase"] = match.group(0)
 
     primary_item = extracted_items[0]["item_type"] if extracted_items else None
     primary_quantity = extracted_items[0]["quantity"] if extracted_items else 1

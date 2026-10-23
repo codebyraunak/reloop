@@ -1101,6 +1101,44 @@ def test_assistant_separates_budget_from_quantity():
     assert body["tool_called"] is None
 
 
+@pytest.mark.parametrize(
+    ("message", "expected_items"),
+    [
+        ("I have 3 mobile phones", [{"item_type": "mobile_phone", "quantity": 3}]),
+        ("3 phones", [{"item_type": "mobile_phone", "quantity": 3}]),
+        ("3 mobile", [{"item_type": "mobile_phone", "quantity": 3}]),
+        ("three mobile phones", [{"item_type": "mobile_phone", "quantity": 3}]),
+        ("I have 2 smartphones", [{"item_type": "mobile_phone", "quantity": 2}]),
+        ("999 laptops", [{"item_type": "laptop", "quantity": 500}]),
+        (
+            "3 mobile phones and 2 laptops",
+            [
+                {"item_type": "mobile_phone", "quantity": 3},
+                {"item_type": "laptop", "quantity": 2},
+            ],
+        ),
+        (
+            "1 laptop in Mysuru, PIN 570001, budget ₹100",
+            [{"item_type": "laptop", "quantity": 1}],
+        ),
+    ],
+)
+def test_assistant_intent_extracts_quantities_without_alias_duplicates(message, expected_items):
+    intent = agent_module.extract_assistant_intent(message)
+
+    assert {
+        item["item_type"]: item["quantity"]
+        for item in intent["items"]
+    } == {
+        item["item_type"]: item["quantity"]
+        for item in expected_items
+    }
+    assert len(intent["items"]) == len(expected_items)
+    if "budget" in message:
+        assert intent["max_fee"] == 100.0
+        assert intent["pincode"] == "570001"
+
+
 def test_assistant_never_submits_a_booking():
     resp = client.post("/api/assistant", json={
         "message": "Please book a pickup for my 2 laptops right now"
