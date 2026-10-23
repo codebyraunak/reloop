@@ -28,12 +28,20 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from main import app, init_db, db_connection, fetchone_dict, fetchall_dict, read_mock_recycler_website  # noqa: E402
+import main as main_module  # noqa: E402
 import db as db_module  # noqa: E402
 import agent as agent_module  # noqa: E402
-from mock_recyclers import retrieve_mock_recycler_evidence  # noqa: E402
+from mock_recyclers import retrieve_mock_recycler_evidence, reset_demo_scenarios  # noqa: E402
 
 init_db()
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def clear_demo_scenario_overrides():
+    reset_demo_scenarios()
+    yield
+    reset_demo_scenarios()
 
 
 def test_database_import_does_not_initialize_sqlite(tmp_path):
@@ -403,7 +411,7 @@ def test_invalid_recycler_source_url_returns_unresolved_evidence(monkeypatch):
     assert "evidence_verified" not in evidence
 
 
-def test_recycler_evidence_returns_error_on_http_status_failure():
+def test_recycler_evidence_falls_back_after_http_status_failure():
     unavailable_app = FastAPI()
 
     @unavailable_app.get("/mock-recycler/{slug}")
@@ -412,9 +420,9 @@ def test_recycler_evidence_returns_error_on_http_status_failure():
 
     evidence = retrieve_mock_recycler_evidence("apex", app_instance=unavailable_app)
 
-    assert evidence["status"] == "unresolved"
-    assert "HTTP 503" in evidence["error"]
-    assert "name" not in evidence
+    assert evidence["evidence_verified"] is True
+    assert evidence["fetch_mode"] == "in_process_fallback"
+    assert evidence["name"] == "Apex EcoCollect Special Services"
     assert evidence["source_url"] == "http://testserver/mock-recycler/apex"
 
 
@@ -904,12 +912,15 @@ def test_tests_page_run_all_script_targets_real_benchmark_api():
     page = client.get("/tests")
     assert page.status_code == 200
     assert "postBenchmark('/api/tests/run')" in page.text
+    assert "TC5 · BONUS" in page.text
 
     response = client.post("/api/tests/run")
     assert response.status_code == 200
     result = response.json()
-    assert result["total"] == 4
-    assert len(result["results"]) == 4
+    assert result["total"] == 5
+    assert result["official_total"] == 4
+    assert result["bonus_total"] == 1
+    assert len(result["results"]) == 5
     assert all(case["passed"] is True for case in result["results"])
 
 
@@ -917,8 +928,10 @@ def test_official_tests_api_run_and_persisted():
     resp = client.post("/api/tests/run")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["total"] == 4
-    assert body["passed"] == 4
+    assert body["total"] == 5
+    assert body["official_total"] == 4
+    assert body["bonus_total"] == 1
+    assert body["passed"] == 5
     for result in body["results"]:
         assert result["input"]
         assert result["expected"]
@@ -935,6 +948,10 @@ def test_official_tests_api_run_and_persisted():
     tc4 = next(result for result in body["results"] if result["case_id"] == "TC4")
     assert tc4["evidence"]["verified"] is True
     assert tc4["evidence"]["collection_confirmed"] is False
+
+    tc5 = next(result for result in body["results"] if result["case_id"] == "TC5")
+    assert tc5["passed"] is True
+    assert tc5["evidence"]["replacement_has_no_approval_or_booking"] is True
     assert tc4["evidence"]["display_wording"] == "Requested, not yet collected."
     assert tc4["evidence"]["no_collected_status"] is True
 
@@ -974,6 +991,9 @@ def test_health_endpoint():
     assert body["status"] == "ok"
     assert body["service"] == "EcoRoute"
     assert body["database_status"] == "connected"
+    assert body["database_dialect"] == "sqlite"
+    assert isinstance(body["gemini_configured"], bool)
+    assert "DATABASE_URL" not in body
 
 
 def test_no_collected_status_exists_anywhere():
@@ -1057,3 +1077,136 @@ def test_request_collection_requires_specific_id():
     response = client.get("/api/requests", params={"request_id": created["id"]})
     assert response.status_code == 200
     assert [row["id"] for row in response.json()] == [created["id"]]
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["fee_up", "stops_accepting_laptop", "pickup_unavailable"],
+)
+def test_live_recycler_drift_fails_verification_and_replans_without_booking(scenario):
+    created = client.post("/api/requests", json={
+        "item_type": "laptop", "quantity": 1, "city": "Mysuru",
+        "pincode": "570001", "max_fee": 100,
+    }).json()
+    request_id = created["id"]
+    approved = client.post(
+        f"/api/requests/{request_id}/approval", json={"approved": True}
+    )
+    assert approved.status_code == 200
+    booking = client.post(f"/api/requests/{request_id}/book")
+    assert booking.status_code == 200
+    changed = client.post(
+        "/api/demo/scenario",
+        json={"slug": "greenloop", "scenario": scenario},
+    )
+    assert changed.status_code == 200
+
+    verification = client.post(f"/api/requests/{request_id}/verify").json()
+    assert verification["status"] == "failed"
+    assert verification["verified"] is False
+    assert verification["drift"]
+    assert all({"centre", "field", "approved_value", "live_value"} <= set(row) for row in verification["drift"])
+
+    replacement_response = client.post(f"/api/requests/{request_id}/replan")
+    assert replacement_response.status_code == 200
+    replacement = replacement_response.json()
+    assert replacement["replaces_request_id"] == request_id
+    assert replacement["status"] in {"draft", "awaiting_approval"}
+    assert replacement["approval"] is None
+    assert replacement["booking"] is None
+    assert all(
+        centre["recycler_id"] != "mock-recycler-a"
+        for centre in replacement["plan"]["centres"]
+    )
+
+
+def test_unreachable_live_recycler_is_unresolved_not_failed(monkeypatch):
+    created = client.post("/api/requests", json={
+        "item_type": "laptop", "quantity": 1, "city": "Mysuru",
+        "pincode": "570001", "max_fee": 100,
+    }).json()
+    request_id = created["id"]
+    assert client.post(
+        f"/api/requests/{request_id}/approval", json={"approved": True}
+    ).status_code == 200
+    assert client.post(f"/api/requests/{request_id}/book").status_code == 200
+
+    original_retrieve = main_module.retrieve_mock_recycler_evidence
+
+    def unavailable(slug, app_instance=None, request_base_url=None):
+        if slug == "greenloop":
+            return {
+                "status": "unresolved",
+                "error": "simulated source outage",
+                "source_url": "https://example.invalid/mock-recycler/greenloop",
+                "retrieved_at": "2026-10-23T00:00:00+00:00",
+            }
+        return original_retrieve(
+            slug,
+            app_instance=app_instance,
+            request_base_url=request_base_url,
+        )
+
+    monkeypatch.setattr(main_module, "retrieve_mock_recycler_evidence", unavailable)
+    verification = client.post(f"/api/requests/{request_id}/verify").json()
+    assert verification["status"] == "unresolved"
+    assert verification["verified"] is False
+    assert verification["verified_at"] is None
+    stored = client.get(f"/api/requests/{request_id}").json()
+    assert stored["booking"]["verification_outcome"] == "unresolved"
+    assert stored["booking"]["verified_at"] is None
+
+
+def test_tc5_bonus_benchmark_runs_self_healing_flow():
+    response = client.post("/api/tests/run/TC5")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["passed"] is True
+    assert result["evidence"]["verification"]["status"] == "failed"
+    assert result["evidence"]["replacement_has_no_approval_or_booking"] is True
+
+
+def test_pin_prefix_can_match_a_centre_when_city_text_does_not():
+    response = client.post("/api/requests", json={
+        "item_type": "laptop",
+        "quantity": 1,
+        "city": "Bengaluru",
+        "pincode": "570001",
+        "max_fee": 100,
+    })
+    assert response.status_code == 200
+    evidence = response.json()["plan"]["items"][0]["recycler_evidence"]
+    greenloop = next(row for row in evidence if row["recycler_id"] == "mock-recycler-a")
+    assert greenloop["area_match"] == "pin_prefix"
+    assert greenloop["matched_pin_prefix"] == "570"
+
+
+def test_partial_plan_needs_explicit_acknowledgement():
+    created = client.post("/api/requests", json={
+        "items": [
+            {"item_type": "laptop", "quantity": 1},
+            {"item_type": "battery", "quantity": 1},
+        ],
+        "city": "Mysuru",
+        "pincode": "570001",
+        "max_fee": 100,
+        "preferred_centre": "mock-recycler-a",
+    })
+    assert created.status_code == 200
+    request = created.json()
+    assert request["status"] == "awaiting_approval"
+    assert [item["decision"] for item in request["plan"]["items"]] == ["accepted", "rejected"]
+    assert [centre["recycler_id"] for centre in request["plan"]["centres"]] == ["mock-recycler-a"]
+
+    rejected = client.post(
+        f"/api/requests/{request['id']}/approval",
+        json={"approved": True},
+    )
+    assert rejected.status_code == 409
+    assert "acknowledgement" in rejected.json()["detail"].lower()
+    approved = client.post(
+        f"/api/requests/{request['id']}/approval",
+        json={"approved": True, "acknowledge_partial": True},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"

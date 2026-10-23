@@ -739,6 +739,21 @@
           <button class="btn form-submit" type="submit">Build my pickup plan <span aria-hidden="true">↗</span></button>
           <div class="form-result" id="formResult" role="status"></div>
           <div id="workflowPanel" class="form-result" style="display:none;background:#f5f8f1;color:var(--ink);border:1px solid var(--line)" aria-live="polite"></div>
+          <div id="demoControls" style="display:none;margin-top:16px;padding:14px;border:1px dashed #9bb99f;border-radius:12px;background:#f6faf2;">
+            <strong>Demo controls</strong>
+            <p class="hint">Synthetic-only changes to a recycler profile for demonstrating drift detection.</p>
+            <label class="field" for="demoScenarioRecycler" style="display:block;margin:10px 0;">
+              Recycler
+              <select id="demoScenarioRecycler" aria-label="Recycler to change"></select>
+            </label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-light btn-sm" type="button" data-demo-scenario="fee_up">Simulate fee increase</button>
+              <button class="btn btn-light btn-sm" type="button" data-demo-scenario="stops_accepting">Stop accepting a planned item</button>
+              <button class="btn btn-light btn-sm" type="button" data-demo-scenario="pickup_unavailable">Make pickup unavailable</button>
+              <button class="btn btn-light btn-sm" type="button" id="resetDemoScenario">Reset scenario</button>
+            </div>
+            <p id="demoScenarioStatus" class="hint" role="status" aria-live="polite"></p>
+          </div>
           <p class="hint form-footnote">Before booking: centre profiles, fees and booking references shown here are simulated. This page does not dispatch a real-world collection.</p>
         </form>
       </div>
@@ -920,9 +935,9 @@
       const maxFee = plan.max_fee ?? request.max_fee ?? 0;
       const feeException = totalFee > maxFee;
 
-      const canApprove = ['draft', 'awaiting_approval', 'unresolved'].includes(status) && items.some(i => i.decision === 'accepted');
+      const canApprove = ['draft', 'awaiting_approval'].includes(status) && items.some(i => i.decision === 'accepted');
       const canBook = status === 'approved';
-      const canVerify = ['requested', 'verified'].includes(status);
+      const canVerify = ['requested', 'verified', 'failed', 'unresolved'].includes(status);
 
       const result = $('#workflowPanel');
       result.style.display = 'block';
@@ -1025,10 +1040,26 @@
           </div>
 
           ${request.booking ? `
-            <div style="margin-top:14px;padding:12px;background:#eef7ea;border:1px solid #c9dec5;border-radius:12px;font-size:0.85rem;">
+            <div style="margin-top:14px;padding:12px;background:${request.booking.status === 'failed' ? '#fff1f0' : request.booking.status === 'unresolved' ? '#fff8e7' : '#eef7ea'};border:1px solid #c9dec5;border-radius:12px;font-size:0.85rem;">
               <strong>Booking Reference:</strong> <code>${escapeHTML(request.booking.reference)}</code>
-              <div style="margin-top:4px;"><strong>Status:</strong> Requested, not yet collected.</div>
-              ${request.booking.verified ? `<div style="color:var(--pass);margin-top:2px;">✓ Independently verified against live mock recycler profile.</div>` : ''}
+              <div style="margin-top:4px;"><strong>Booking status:</strong> ${escapeHTML(request.booking.status)}</div>
+              <div style="margin-top:4px;">Requested, not yet collected.</div>
+              ${!request.booking.verification_outcome ? `<div style="margin-top:4px;"><strong>Verification pending.</strong> Live evidence has not been checked yet.</div>` : ''}
+              ${request.booking.verified ? `<div style="color:var(--pass);margin-top:2px;">✓ Live evidence matches the approved snapshot.</div>` : ''}
+              ${request.booking.verification_outcome && request.booking.verification_outcome !== 'verified' ? `<div style="margin-top:4px;"><strong>Verification ${request.booking.verification_outcome === 'failed' ? 'failed' : 'is unresolved'}.</strong> ${escapeHTML(request.booking.verification_evidence || '')}</div>` : ''}
+              ${(request.booking.checks || []).length ? `
+                <details style="margin-top:8px;"><summary>Verification checks (${request.booking.checks.filter(check => !check.ok).length} not passing)</summary>
+                  <ul style="margin:6px 0 0 18px;">${request.booking.checks.map(check => `<li>${escapeHTML(check.check)}: ${check.ok ? 'PASS' : 'NOT VERIFIED'} (intended ${escapeHTML(JSON.stringify(check.intended))}; observed ${escapeHTML(JSON.stringify(check.observed))})</li>`).join('')}</ul>
+                </details>
+              ` : ''}
+              ${(request.booking.drift || []).length ? `
+                <div style="margin-top:10px;"><strong>What changed</strong>
+                  <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:.8rem;">
+                    <thead><tr><th style="text-align:left;padding:5px;">Centre</th><th style="text-align:left;padding:5px;">Field</th><th style="text-align:left;padding:5px;">Approved</th><th style="text-align:left;padding:5px;">Live</th></tr></thead>
+                    <tbody>${request.booking.drift.map(change => `<tr><td style="padding:5px;">${escapeHTML(change.centre)}</td><td style="padding:5px;">${escapeHTML(change.field)}</td><td style="padding:5px;">${escapeHTML(JSON.stringify(change.approved_value))}</td><td style="padding:5px;">${escapeHTML(JSON.stringify(change.live_value))}</td></tr>`).join('')}</tbody>
+                  </table></div>
+                </div>
+              ` : ''}
             </div>
           ` : ''}
         </div>
@@ -1039,6 +1070,7 @@
           ${canApprove ? `<button class="btn" type="button" id="openApprovalModalBtn">Review & Authorize Plan${feeException ? ' (Fee Exception)' : ''} ↗</button>` : ''}
           ${canBook ? `<button class="btn" type="button" id="bookRequestButton">Submit Mock Booking Request</button>` : ''}
           ${canVerify ? `<button class="btn btn-light" type="button" id="verifyRequestButton">Independently Verify Booking</button>` : ''}
+          ${request.booking?.status === 'failed' && (request.booking.drift || []).length ? `<button class="btn" type="button" id="replanRequestButton">Re-plan with the agent</button>` : ''}
           ${['requested', 'verified'].includes(status) ? `<span class="hint" style="align-self:center;">Status: Requested, not yet collected.</span>` : ''}
         </div>
       `;
@@ -1048,6 +1080,7 @@
       }
       if (canBook) $('#bookRequestButton').addEventListener('click', bookRequest);
       if (canVerify) $('#verifyRequestButton').addEventListener('click', verifyRequest);
+      if ($('#replanRequestButton')) $('#replanRequestButton').addEventListener('click', replanRequest);
 
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -1058,6 +1091,7 @@
       const body = $('#modalBody');
       const plan = activeRequest.plan || {};
       const items = plan.items || [];
+      const partialItems = items.filter(i => ['rejected', 'unresolved'].includes(i.decision));
 
       const itemsList = items.map(i => `<li><strong>${escapeHTML(i.quantity)} × ${escapeHTML(i.item_label || i.item_type)}:</strong> ${escapeHTML(i.decision)} (${escapeHTML(i.suggested_recycler?.recycler_name || 'No centre')})</li>`).join('') || `<li>${escapeHTML(plan.quantity)} × ${escapeHTML(plan.item_label || activeRequest.item_type)}</li>`;
 
@@ -1072,6 +1106,12 @@
           <div><strong>Total Quoted Fee:</strong> ₹${escapeHTML(totalFee)} (Your limit: ₹${escapeHTML(maxFee)})</div>
           <ul style="margin-top:8px;">${itemsList}</ul>
         </div>
+        ${partialItems.length ? `
+          <label style="display:flex;align-items:flex-start;gap:8px;margin:12px 0;font-size:.84rem;">
+            <input id="acknowledgePartial" type="checkbox" style="margin-top:4px;">
+            <span>I understand these items will not be included in the approved pickup: ${partialItems.map(i => `${escapeHTML(i.quantity)} × ${escapeHTML(i.item_label || i.item_type)} (${escapeHTML(i.decision)})`).join(', ')}.</span>
+          </label>
+        ` : ''}
         ${feeException ? `
           <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:0.82rem;color:#92400e;margin:12px 0;">
             <strong>⚠️ Fee Exception:</strong> The proposed pickup fee of ₹${escapeHTML(totalFee)} exceeds your limit of ₹${escapeHTML(maxFee)}.
@@ -1084,10 +1124,15 @@
       `;
 
       modal.classList.add('open');
+      const confirmButton = $('#modalConfirmBtn');
+      confirmButton.disabled = partialItems.length > 0;
+      $('#acknowledgePartial')?.addEventListener('change', event => {
+        confirmButton.disabled = !event.currentTarget.checked;
+      });
 
       $('#modalConfirmBtn').onclick = async () => {
         modal.classList.remove('open');
-        await executeApproval(true, feeException);
+        await executeApproval(true, feeException, partialItems.length > 0 && $('#acknowledgePartial').checked);
       };
       $('#modalCancelBtn').onclick = () => {
         modal.classList.remove('open');
@@ -1098,13 +1143,17 @@
       };
     }
 
-    async function executeApproval(approved, acceptFeeException) {
+    async function executeApproval(approved, acceptFeeException, acknowledgePartial = false) {
       if (!activeRequestId) return;
       try {
         const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/approval`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ approved, accept_fee_exception: acceptFeeException })
+          body: JSON.stringify({
+            approved,
+            accept_fee_exception: acceptFeeException,
+            acknowledge_partial: acknowledgePartial,
+          })
         });
         const body = await parseApiResponse(response, 'Approval failed.');
         if (!response.ok) throw new Error(apiErrorMessage(body, 'Approval failed.'));
@@ -1140,11 +1189,68 @@
 
         const detailResponse = await fetch(`${API_BASE}/api/requests/${activeRequestId}`);
         const detail = await parseApiResponse(detailResponse, 'Could not refresh request.');
-        showToast(`Independently verified booking ${body.reference}. Requested, not yet collected.`);
+        showToast(body.status === 'verified'
+          ? `Verification passed for ${body.reference}. Requested, not yet collected.`
+          : body.status === 'failed'
+            ? `Verification failed for ${body.reference}; live changes are shown below.`
+            : `Verification is unresolved for ${body.reference}; the source could not be confirmed.`);
         renderWorkflow(detail);
       } catch (err) {
         showToast(err.message || 'Verification could not be completed.');
       }
+
+      async function replanRequest() {
+        if (!activeRequestId) return;
+        try {
+          const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/replan`, { method: 'POST' });
+          const body = await parseApiResponse(response, 'Re-plan failed.');
+          if (!response.ok) throw new Error(apiErrorMessage(body, 'Re-plan failed.'));
+          showToast('A replacement plan is ready. Review and approve it before any booking.');
+          renderWorkflow(body);
+        } catch (err) {
+          showToast(err.message || 'Could not create a replacement plan.');
+        }
+      }
+
+      async function setDemoScenario(scenario) {
+        const select = $('#demoScenarioRecycler');
+        const status = $('#demoScenarioStatus');
+        const slug = select?.value;
+        if (!slug) return;
+        let selectedScenario = scenario;
+        if (scenario === 'stops_accepting') {
+          const recycler = (activeRequest?.plan?.centres || []).find(
+            centre => centre.recycler_id === select.selectedOptions[0]?.dataset.recyclerId
+          );
+          const plannedItem = (activeRequest?.plan?.items || []).find(
+            item => item.suggested_recycler?.recycler_id === recycler?.recycler_id
+          ) || activeRequest?.plan?.items?.[0];
+          if (!plannedItem?.item_type) {
+            showToast('Create a pickup plan first to select an item for this demo scenario.');
+            return;
+          }
+          selectedScenario = `stops_accepting_${plannedItem.item_type}`;
+        }
+        try {
+          const response = await fetch(`${API_BASE}/api/demo/scenario`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slug, scenario: selectedScenario })
+          });
+          const body = await parseApiResponse(response, 'Could not change demo scenario.');
+          if (!response.ok) throw new Error(apiErrorMessage(body, 'Could not change demo scenario.'));
+          if (status) status.textContent = selectedScenario
+            ? `${slug}: ${selectedScenario} is active for future source reads.`
+            : `${slug}: default profile restored.`;
+        } catch (err) {
+          if (status) status.textContent = err.message || 'Demo scenario could not be changed.';
+        }
+      }
+
+      $$('[data-demo-scenario]').forEach(button => {
+        button.addEventListener('click', () => setDemoScenario(button.dataset.demoScenario));
+      });
+      $('#resetDemoScenario')?.addEventListener('click', () => setDemoScenario(null));
     }
 
     // Structured form submission
@@ -1294,6 +1400,23 @@
         } else {
           if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Rule-based Fallback Active';
           if (disclaimerEl) disclaimerEl.textContent = 'Deterministic fallback mode active. Human approval is strictly required before any booking.';
+        }
+        if (data?.demo_controls_enabled) {
+          const panel = $('#demoControls');
+          if (panel) panel.style.display = 'block';
+          fetch(`${API_BASE}/api/recyclers`, { signal: AbortSignal.timeout(6000) })
+            .then(r => parseApiResponse(r, 'Could not load recycler profiles.'))
+            .then(recyclers => {
+              const select = $('#demoScenarioRecycler');
+              if (!select || !Array.isArray(recyclers)) return;
+              select.innerHTML = recyclers.map(recycler =>
+                `<option data-recycler-id="${escapeHTML(recycler.id)}" value="${escapeHTML(recycler.slug || recycler.id)}">${escapeHTML(recycler.name)}</option>`
+              ).join('');
+            })
+            .catch(() => {
+              const status = $('#demoScenarioStatus');
+              if (status) status.textContent = 'Recycler profiles could not be loaded for demo controls.';
+            });
         }
       })
       .catch(() => {

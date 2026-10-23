@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+from urllib.parse import urlencode
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -19,6 +20,7 @@ from bs4 import BeautifulSoup
 from db import db_connection, fetchone_dict, now_iso
 
 logger = logging.getLogger("ecoroute.mock_recyclers")
+DEMO_SCENARIO_OVERRIDES: dict[str, str] = {}
 
 MATERIAL_LABELS: dict[str, str] = {
     "laptop": "Laptop",
@@ -122,14 +124,19 @@ def get_public_base_url() -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def get_source_url(slug: str, request_base_url: Optional[str] = None) -> str:
+def get_source_url(
+    slug: str,
+    request_base_url: Optional[str] = None,
+    scenario: Optional[str] = None,
+) -> str:
     base = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/") or (
         request_base_url or get_public_base_url()
     ).rstrip("/")
-    return f"{base}/mock-recycler/{slug}"
+    url = f"{base}/mock-recycler/{slug}"
+    return f"{url}?{urlencode({'scenario': scenario})}" if scenario else url
 
 
-def render_mock_recycler_html(slug: str) -> Optional[str]:
+def render_mock_recycler_html(slug: str, scenario: Optional[str] = None) -> Optional[str]:
     """Generates the semantic HTML profile for a mock recycler site."""
     slug_clean = slug.strip().lower()
     recycler = next(
@@ -138,17 +145,36 @@ def render_mock_recycler_html(slug: str) -> Optional[str]:
     )
     if not recycler:
         return None
+    profile = {
+        **recycler,
+        "accepted_materials": list(recycler["accepted_materials"]),
+        "rejected_materials": list(recycler["rejected_materials"]),
+    }
+    if scenario == "fee_up":
+        profile["pickup_fee_inr"] += 40
+    elif scenario == "pickup_unavailable":
+        profile["pickup_available"] = False
+    elif scenario and scenario.startswith("stops_accepting_"):
+        material = scenario.removeprefix("stops_accepting_")
+        if material not in MATERIAL_LABELS:
+            raise ValueError(f"Unsupported scenario material: {material}")
+        if material in profile["accepted_materials"]:
+            profile["accepted_materials"].remove(material)
+            if material not in profile["rejected_materials"]:
+                profile["rejected_materials"].append(material)
+    elif scenario:
+        raise ValueError(f"Unsupported recycler scenario: {scenario}")
 
     accepted_lis = "\n".join(
         f'<li data-material-id="{m}">{MATERIAL_LABELS.get(m, m)}</li>'
-        for m in recycler["accepted_materials"]
+        for m in profile["accepted_materials"]
     )
     rejected_lis = "\n".join(
         f'<li data-material-id="{m}">{MATERIAL_LABELS.get(m, m)}</li>'
-        for m in recycler["rejected_materials"]
+        for m in profile["rejected_materials"]
     ) or "<li>None</li>"
 
-    source_url = get_source_url(recycler["slug"])
+    source_url = get_source_url(recycler["slug"], scenario=scenario)
     rendered_at = now_iso()
 
     return f"""<!doctype html>
@@ -159,9 +185,9 @@ def render_mock_recycler_html(slug: str) -> Optional[str]:
   <meta name="robots" content="noindex, nofollow">
 </head>
 <body>
-  <main id="recycler-profile" data-recycler-id="{recycler['id']}" data-slug="{recycler['slug']}">
-    <h1 id="recycler-name">{recycler['name']}</h1>
-    <p><strong>Service Area:</strong> <span id="service-area">{recycler['area']}</span></p>
+  <main id="recycler-profile" data-recycler-id="{profile['id']}" data-slug="{profile['slug']}">
+    <h1 id="recycler-name">{profile['name']}</h1>
+    <p><strong>Service Area:</strong> <span id="service-area">{profile['area']}</span></p>
 
     <h2>Accepted Materials</h2>
     <ul id="accepted-materials">
@@ -173,9 +199,9 @@ def render_mock_recycler_html(slug: str) -> Optional[str]:
       {rejected_lis}
     </ul>
 
-    <p><strong>Pickup Fee:</strong> ₹<span id="pickup-fee-inr">{recycler['pickup_fee_inr']}</span> (INR)</p>
-    <p><strong>Pickup Available:</strong> <span id="pickup-available">{'Yes' if recycler['pickup_available'] else 'No'}</span></p>
-    <p id="recycler-notes">{recycler['notes']}</p>
+    <p><strong>Pickup Fee:</strong> ₹<span id="pickup-fee-inr">{profile['pickup_fee_inr']}</span> (INR)</p>
+    <p><strong>Pickup Available:</strong> <span id="pickup-available">{'Yes' if profile['pickup_available'] else 'No'}</span></p>
+    <p id="recycler-notes">{profile['notes']}</p>
 
     <div id="source-metadata">
       <span id="source-url">{source_url}</span>
@@ -261,12 +287,18 @@ def _parse_materials(container: Any) -> list[str]:
     return materials
 
 
-async def _fetch_asgi_source(app_instance: Any, source_url: str, slug: str) -> httpx.Response:
+async def _fetch_asgi_source(
+    app_instance: Any,
+    source_url: str,
+    slug: str,
+    scenario: Optional[str] = None,
+) -> httpx.Response:
     transport = httpx.ASGITransport(app=app_instance)
     source = httpx.URL(source_url)
     base_url = source.copy_with(path="/", query=None, fragment=None)
     async with httpx.AsyncClient(transport=transport, base_url=base_url) as client:
-        return await client.get(f"/mock-recycler/{slug}", timeout=6.0)
+        params = {"scenario": scenario} if scenario else None
+        return await client.get(f"/mock-recycler/{slug}", params=params, timeout=6.0)
 
 
 def retrieve_mock_recycler_evidence(
@@ -276,7 +308,8 @@ def retrieve_mock_recycler_evidence(
 ) -> dict[str, Any]:
     """Fetches the mock source page over HTTPX and parses only the returned HTML."""
     slug_clean = slug.strip().lower()
-    source_url = get_source_url(slug_clean, request_base_url)
+    scenario = DEMO_SCENARIO_OVERRIDES.get(slug_clean)
+    source_url = get_source_url(slug_clean, request_base_url, scenario)
     fetch_mode = "http"
     parsed_url = httpx.URL(source_url)
     if not parsed_url.is_absolute_url or not parsed_url.host:
@@ -289,7 +322,12 @@ def retrieve_mock_recycler_evidence(
         }
     try:
         if app_instance is not None:
-            response = asyncio.run(_fetch_asgi_source(app_instance, source_url, slug_clean))
+            response = asyncio.run(_fetch_asgi_source(
+                app_instance,
+                source_url,
+                slug_clean,
+                scenario,
+            ))
             fetch_mode = "http"
         else:
             with httpx.Client(timeout=6.0) as client:
@@ -311,7 +349,7 @@ def retrieve_mock_recycler_evidence(
                 "retrieved_at": now_iso(),
                 "fetch_mode": "http",
             }
-        html = render_mock_recycler_html(slug_clean)
+        html = render_mock_recycler_html(slug_clean, scenario=scenario)
         if html is None:
             return {
                 "status": "unresolved",
@@ -324,14 +362,21 @@ def retrieve_mock_recycler_evidence(
         fetch_mode = "in_process_fallback"
 
     if response.status_code != 200:
-        return {
-            "status": "unresolved",
-            "error": f"Mock recycler source returned HTTP {response.status_code}: {source_url}",
-            "source_url": source_url,
-            "retrieved_at": now_iso(),
-            "fetch_mode": fetch_mode,
-            "fetch_mode": fetch_mode,
-        }
+        fallback_html = (
+            render_mock_recycler_html(slug_clean, scenario=scenario)
+            if app_instance is not None
+            else None
+        )
+        if fallback_html is None:
+            return {
+                "status": "unresolved",
+                "error": f"Mock recycler source returned HTTP {response.status_code}: {source_url}",
+                "source_url": source_url,
+                "retrieved_at": now_iso(),
+                "fetch_mode": fetch_mode,
+            }
+        response = httpx.Response(200, text=fallback_html)
+        fetch_mode = "in_process_fallback"
 
     try:
         data = parse_recycler_html(response.text, source_url)
@@ -381,3 +426,7 @@ def retrieve_all_mock_recyclers(
         if "error" not in ev and ev.get("id"):
             results.append(ev)
     return results
+
+
+def reset_demo_scenarios() -> None:
+    DEMO_SCENARIO_OVERRIDES.clear()

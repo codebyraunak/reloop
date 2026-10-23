@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#f7f8f2" />
-  <meta name="description" content="ReLoop Official Test Benchmark Runner for TC1–TC4 official scenarios." />
+  <meta name="description" content="ReLoop benchmark runner for official cases TC1–TC4 and the separately labelled TC5 bonus." />
   <title>ReLoop — Official Benchmark Test Runner</title>
   <link rel="icon" type="image/png" href="/favicon/reloop-logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -324,7 +324,7 @@
     <div class="eyebrow">Evidence-Backed Verification Suite</div>
     <h1>Official Benchmark Tests</h1>
     <p>
-      Run TC1 through TC4 against ReLoop's backend and synthetic recycler HTML sources.
+      Run official TC1 through TC4 against ReLoop's backend and synthetic recycler HTML sources. TC5 is a separately labelled bonus demo.
       Battery decisions are centre-specific: PaperBack rejects batteries, while another recycler may accept them.
     </p>
     <div class="hero-actions">
@@ -386,6 +386,19 @@
       </div>
       <div class="result-box" id="result-TC4"></div>
     </div>
+
+    <!-- TC5 is a bonus demo, not an official test case. -->
+    <div class="test-card" id="card-TC5">
+      <div class="card-head">
+        <div>
+          <span class="case-badge">TC5 · BONUS</span>
+          <h3>Recycler changes after approval</h3>
+          <p>Input: approve and book a laptop pickup, then simulate a fee increase. Expected: verification fails with persisted drift; re-plan excludes the changed centre and does not approve or book the replacement.</p>
+        </div>
+        <button class="btn btn-sm" onclick="runCase('TC5')">Run TC5 bonus</button>
+      </div>
+      <div class="result-box" id="result-TC5"></div>
+    </div>
   </div>
 
   <!-- Run History -->
@@ -411,7 +424,7 @@
 </main>
 
 <script>
-  const CASE_IDS = ['TC1', 'TC2', 'TC3', 'TC4'];
+  const CASE_IDS = ['TC1', 'TC2', 'TC3', 'TC4', 'TC5'];
   const runButtons = [...document.querySelectorAll('.test-card button'), document.getElementById('runAllBtn'), document.getElementById('runAllBtn2')];
   let isRunning = false;
 

@@ -44,6 +44,8 @@ from mock_recyclers import (
     get_public_base_url,
     get_source_url,
     render_mock_recycler_html,
+    DEMO_SCENARIO_OVERRIDES,
+    reset_demo_scenarios,
     retrieve_mock_recycler_evidence,
     retrieve_all_mock_recyclers,
 )
@@ -140,12 +142,34 @@ class AssistantInput(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
 
 
+class DemoScenarioInput(BaseModel):
+    slug: str = Field(..., min_length=1)
+    scenario: Optional[str] = None
+
+
+def demo_controls_enabled() -> bool:
+    return os.getenv("DEMO_CONTROLS", "1").strip().lower() not in {"0", "false", "off", "no"}
+
+
+def normalize_demo_scenario(scenario: Optional[str]) -> Optional[str]:
+    if scenario is None:
+        return None
+    if scenario in {"fee_up", "pickup_unavailable"}:
+        return scenario
+    if scenario.startswith("stops_accepting_"):
+        material = scenario.removeprefix("stops_accepting_")
+        if material in MATERIAL_LABELS:
+            return scenario
+    raise HTTPException(status_code=422, detail="Unsupported demo scenario.")
+
+
 # ---------------------------------------------------------------------------
 # Backward Compatibility Shims
 # ---------------------------------------------------------------------------
 MOCK_RECYCLERS = [
     {
         "id": r["id"],
+        "slug": r["slug"],
         "name": r["name"],
         "area": r["area"],
         "accepted_materials": r["accepted_materials"],
@@ -335,6 +359,7 @@ def health() -> dict[str, Any]:
             if os.getenv("DATABASE_URL", "").strip() and not TEST_MODE
             else "sqlite"
         ),
+        "demo_controls_enabled": demo_controls_enabled(),
         "gemini_configured": bool(GEMINI_API_KEY),
         "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else None,
         "timestamp": now_iso(),
@@ -352,11 +377,38 @@ def recyclers() -> list[dict[str, Any]]:
 
 
 @app.get("/mock-recycler/{slug}", response_class=HTMLResponse)
-def mock_recycler_page(slug: str):
-    html = render_mock_recycler_html(slug)
+def mock_recycler_page(slug: str, scenario: Optional[str] = None):
+    if scenario and not demo_controls_enabled():
+        raise HTTPException(status_code=404, detail="Demo scenarios are disabled.")
+    selected_scenario = normalize_demo_scenario(
+        scenario or (
+            DEMO_SCENARIO_OVERRIDES.get(slug.strip().lower())
+            if demo_controls_enabled()
+            else None
+        )
+    )
+    try:
+        html = render_mock_recycler_html(slug, scenario=selected_scenario)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not html:
         raise HTTPException(status_code=404, detail=f"Mock recycler profile '{slug}' not found.")
     return HTMLResponse(content=html, status_code=200)
+
+
+@app.post("/api/demo/scenario")
+def set_demo_scenario(payload: DemoScenarioInput) -> dict[str, Any]:
+    if not demo_controls_enabled():
+        raise HTTPException(status_code=404, detail="Demo controls are disabled.")
+    slug = payload.slug.strip().lower()
+    if not any(seed["slug"] == slug for seed in SEED_RECYCLERS):
+        raise HTTPException(status_code=404, detail="Recycler profile not found.")
+    scenario = normalize_demo_scenario(payload.scenario)
+    if scenario is None:
+        DEMO_SCENARIO_OVERRIDES.pop(slug, None)
+    else:
+        DEMO_SCENARIO_OVERRIDES[slug] = scenario
+    return {"slug": slug, "scenario": scenario, "enabled": True}
 
 
 # ---------------------------------------------------------------------------
@@ -1022,12 +1074,20 @@ def verify_booking(request_id: str) -> dict[str, Any]:
                     "ok": False,
                 })
                 continue
+            profile_ok = live.get("id") == centre_id
             checks.append({
                 "check": f"{display_name}:profile_available",
                 "intended": centre_id,
                 "observed": live.get("id"),
-                "ok": live.get("id") == centre_id,
+                "ok": profile_ok,
             })
+            if not profile_ok:
+                drift.append({
+                    "centre": display_name,
+                    "field": "recycler_id",
+                    "approved_value": centre_id,
+                    "live_value": live.get("id"),
+                })
 
             intended_fee = centre.get("fee")
             observed_fee = live.get("pickup_fee")
@@ -1093,7 +1153,8 @@ def verify_booking(request_id: str) -> dict[str, Any]:
             """
             UPDATE bookings
             SET status = ?, verified = ?, verified_at = ?, verification_evidence = ?,
-                verification_checks = ?, verification_outcome = ?, drift_json = ?
+                verification_checked_at = ?, verification_checks = ?,
+                verification_outcome = ?, drift_json = ?
             WHERE request_id = ?
             """,
             (
@@ -1101,6 +1162,7 @@ def verify_booking(request_id: str) -> dict[str, Any]:
                 int(outcome == "verified"),
                 verified_at,
                 reason,
+                timestamp,
                 json.dumps(checks),
                 outcome,
                 json.dumps(drift),
@@ -1124,7 +1186,97 @@ def verify_booking(request_id: str) -> dict[str, Any]:
         "checks": checks,
         "drift": drift,
         "verified_at": verified_at,
+        "checked_at": timestamp,
     }
+
+
+@app.post("/api/requests/{request_id}/replan")
+def replan_request(request_id: str, request: Request) -> dict[str, Any]:
+    """Creates an unapproved replacement plan after a failed live-evidence check."""
+    with db_connection() as conn:
+        booking = fetchone_dict(conn.execute(
+            "SELECT * FROM bookings WHERE request_id = ?", (request_id,)
+        ))
+        original = fetchone_dict(conn.execute(
+            "SELECT * FROM requests WHERE id = ?", (request_id,)
+        ))
+    if not original:
+        raise HTTPException(status_code=404, detail="Pickup request not found.")
+    if not booking:
+        raise HTTPException(status_code=409, detail="A failed booking is required before re-planning.")
+    if booking.get("verification_outcome") != "failed":
+        raise HTTPException(status_code=409, detail="Re-planning is only available after failed verification.")
+    drift = json.loads(booking.get("drift_json") or "[]")
+    if not drift:
+        raise HTTPException(status_code=409, detail="Failed verification did not record recycler drift.")
+
+    excluded_centres: set[str] = set()
+    for change in drift:
+        centre_name = change.get("centre")
+        if not centre_name or centre_name == "booking":
+            continue
+        seed = next(
+            (
+                entry for entry in SEED_RECYCLERS
+                if centre_name in {entry["id"], entry["name"], entry["slug"]}
+            ),
+            None,
+        )
+        if seed:
+            excluded_centres.update({seed["id"], seed["name"], seed["slug"]})
+    if not excluded_centres:
+        raise HTTPException(status_code=409, detail="No failed recycler centre can be excluded from the replacement plan.")
+
+    items = json.loads(original.get("items_json") or "[]")
+    if not items:
+        items = [{"item_type": original["item_type"], "quantity": original["quantity"]}]
+    replacement_id = "EW-" + uuid.uuid4().hex[:8].upper()
+    coordinator = BoundedAgentCoordinator(
+        request_id=replacement_id,
+        app_instance=app,
+        excluded_centres=excluded_centres,
+        request_base_url=str(request.base_url).rstrip("/"),
+    )
+    agent_result = coordinator.run_agent_workflow(
+        items=items,
+        city=original.get("city") or original["location"],
+        pincode=original.get("pincode") or "",
+        max_fee=original["max_fee"],
+    )
+    if agent_result.get("status") == "failed" and agent_result.get("plan") is None:
+        raise HTTPException(status_code=422, detail=agent_result.get("reason", "Replacement plan validation failed."))
+    plan = agent_result["plan"]
+    plan["replaces_request_id"] = request_id
+    timestamp = now_iso()
+    with db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO requests(
+                id, item_type, quantity, location, city, pincode, max_fee, items_json,
+                replaces_request_id, status, plan_json, created_at, updated_at
+            )
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                replacement_id,
+                items[0]["item_type"],
+                items[0]["quantity"],
+                original["location"],
+                original.get("city"),
+                original.get("pincode"),
+                original["max_fee"],
+                json.dumps(items),
+                request_id,
+                plan["status"],
+                json.dumps(plan),
+                timestamp,
+                timestamp,
+            ),
+        )
+        replacement = fetchone_dict(conn.execute(
+            "SELECT * FROM requests WHERE id = ?", (replacement_id,)
+        ))
+    return request_row(replacement)
 
 
 # ---------------------------------------------------------------------------
@@ -1148,11 +1300,13 @@ def get_test_runs() -> list[dict[str, Any]]:
 
 @app.post("/api/tests/run")
 def run_official_tests() -> dict[str, Any]:
-    """Runs all official test cases TC1–TC4 through the in-process HTTP API."""
-    cases = ["TC1", "TC2", "TC3", "TC4"]
+    """Runs official test cases TC1–TC4 and the separately labelled TC5 bonus."""
+    cases = ["TC1", "TC2", "TC3", "TC4", "TC5"]
     results = [run_single_test_case(c) for c in cases]
     return {
         "total": len(results),
+        "official_total": 4,
+        "bonus_total": 1,
         "passed": sum(1 for r in results if r["passed"]),
         "results": results,
         "note": "Scenarios use the in-process API and synthetic mock recycler sources. No collected status exists.",
@@ -1162,13 +1316,14 @@ def run_official_tests() -> dict[str, Any]:
 @app.post("/api/tests/run/{case_id}")
 def run_single_test(case_id: str) -> dict[str, Any]:
     case_upper = case_id.strip().upper()
-    if case_upper not in ("TC1", "TC2", "TC3", "TC4"):
-        raise HTTPException(status_code=400, detail="Invalid test case ID. Choose from TC1, TC2, TC3, TC4.")
+    if case_upper not in ("TC1", "TC2", "TC3", "TC4", "TC5"):
+        raise HTTPException(status_code=400, detail="Invalid test case ID. Choose from TC1, TC2, TC3, TC4, TC5.")
     return run_single_test_case(case_upper)
 
 
 def run_single_test_case(case_id: str) -> dict[str, Any]:
     """Executes one benchmark through the real in-process API and persists the result."""
+    reset_demo_scenarios()
     case_inputs = {
         "TC1": {
             "item_type": "laptop", "quantity": 1, "city": "Mysuru",
@@ -1189,12 +1344,18 @@ def run_single_test_case(case_id: str) -> dict[str, Any]:
             "item_type": "laptop", "quantity": 1, "city": "Mysuru",
             "pincode": "570001", "max_fee": 100.0,
         },
+        "TC5": {
+            "item_type": "laptop", "quantity": 1, "city": "Mysuru",
+            "pincode": "570001", "max_fee": 100.0,
+            "scenario": {"slug": "greenloop", "scenario": "fee_up"},
+        },
     }
     expectations = {
         "TC1": "API creates a draft with fetched laptop acceptance evidence, source URL, and retrieval timestamp.",
         "TC2": "API evaluates paper and battery independently; fetched PaperBack HTML accepts paper and rejects battery. A rejected or unresolved item must not yield an accepted draft.",
         "TC3": "Booking is blocked before approval; fee-exception approval is required; explicitly approved request can be booked.",
         "TC4": "API creates, approves, books, and verifies a simulated booking; verification is not collection and status never becomes COLLECTED.",
+        "TC5": "Bonus: simulate a live fee change after approval, detect and persist drift, then create an unbooked replacement plan that excludes the failed centre and requires fresh approval.",
     }
     inp = case_inputs.get(case_id, {})
     expected = expectations.get(case_id, "A supported benchmark case executes through the API.")
@@ -1449,6 +1610,71 @@ def run_single_test_case(case_id: str) -> dict[str, Any]:
                     "no_collected_status": no_collected_status,
                 }
                 explanation = "The API create/approve/book/verify workflow validates simulated booking evidence; neither returned nor stored lifecycle status claims physical collection."
+
+            elif case_id == "TC5":
+                approval_status, approval = await call(
+                    "POST", f"/api/requests/{request_id}/approval", {"approved": True}
+                )
+                booking_status, booking = await call(
+                    "POST", f"/api/requests/{request_id}/book"
+                )
+                scenario_status, scenario_result = await call(
+                    "POST", "/api/demo/scenario", inp["scenario"]
+                )
+                verify_status, verification = await call(
+                    "POST", f"/api/requests/{request_id}/verify"
+                )
+                replan_status, replacement = await call(
+                    "POST", f"/api/requests/{request_id}/replan"
+                )
+                failed_centre_ids = {
+                    seed["id"] for seed in SEED_RECYCLERS
+                    if any(
+                        row.get("centre") in {seed["id"], seed["name"], seed["slug"]}
+                        for row in verification.get("drift", [])
+                    )
+                }
+                replacement_centres = {
+                    centre.get("recycler_id")
+                    for centre in replacement.get("plan", {}).get("centres", [])
+                }
+                passed = (
+                    approval_status == 200
+                    and booking_status == 200
+                    and scenario_status == 200
+                    and verify_status == 200
+                    and verification.get("status") == "failed"
+                    and any(row.get("field") == "fee" for row in verification.get("drift", []))
+                    and replan_status == 200
+                    and bool(failed_centre_ids)
+                    and not replacement_centres.intersection(failed_centre_ids)
+                    and replacement.get("approval") is None
+                    and replacement.get("booking") is None
+                    and replacement.get("status") in {"draft", "awaiting_approval"}
+                )
+                actual = (
+                    f"Original approval HTTP {approval_status}, booking HTTP {booking_status}; "
+                    f"verification {verification.get('status')} with {len(verification.get('drift', []))} drift item(s); "
+                    f"re-plan HTTP {replan_status}, new status {replacement.get('status')}."
+                )
+                evidence = {
+                    "request_id": request_id,
+                    "booking_reference": booking.get("reference"),
+                    "scenario": scenario_result,
+                    "verification": verification,
+                    "replacement_request_id": replacement.get("id"),
+                    "replacement_status": replacement.get("status"),
+                    "failed_centre_ids": sorted(failed_centre_ids),
+                    "replacement_centres": sorted(replacement_centres),
+                    "replacement_has_no_approval_or_booking": (
+                        replacement.get("approval") is None
+                        and replacement.get("booking") is None
+                    ),
+                }
+                explanation = (
+                    "TC5 is a bonus demo: a synthetic live profile changes after booking, verification reports exact drift, "
+                    "and the agent proposes a replacement excluding that centre without approving or booking it."
+                )
 
     try:
         if case_id not in case_inputs:

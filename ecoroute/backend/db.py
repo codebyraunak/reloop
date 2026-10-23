@@ -201,6 +201,7 @@ def run_migrations() -> None:
                     pincode TEXT,
                     max_fee REAL NOT NULL,
                     items_json TEXT,
+                    replaces_request_id TEXT,
                     status TEXT NOT NULL,
                     plan_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -225,6 +226,7 @@ def run_migrations() -> None:
                     submitted_at TEXT NOT NULL,
                     verified_at TEXT,
                     verification_evidence TEXT,
+                    verification_checked_at TEXT,
                     verification_checks TEXT,
                     verification_outcome TEXT,
                     drift_json TEXT,
@@ -276,6 +278,7 @@ def run_migrations() -> None:
                     pincode TEXT,
                     max_fee REAL NOT NULL,
                     items_json TEXT,
+                    replaces_request_id TEXT,
                     status TEXT NOT NULL,
                     plan_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -300,6 +303,7 @@ def run_migrations() -> None:
                     submitted_at TEXT NOT NULL,
                     verified_at TEXT,
                     verification_evidence TEXT,
+                    verification_checked_at TEXT,
                     verification_checks TEXT,
                     verification_outcome TEXT,
                     drift_json TEXT,
@@ -344,6 +348,7 @@ def run_migrations() -> None:
         _add_column_if_missing(conn, "requests", "city", "TEXT")
         _add_column_if_missing(conn, "requests", "pincode", "TEXT")
         _add_column_if_missing(conn, "requests", "items_json", "TEXT")
+        _add_column_if_missing(conn, "requests", "replaces_request_id", "TEXT")
         _add_column_if_missing(conn, "approvals", "accept_fee_exception", "INTEGER DEFAULT 0")
         _add_column_if_missing(conn, "approvals", "snapshot_hash", "TEXT")
         _add_column_if_missing(conn, "approvals", "approved_version", "TEXT DEFAULT '1.0'")
@@ -351,6 +356,7 @@ def run_migrations() -> None:
         _add_column_if_missing(conn, "bookings", "approved_snapshot_json", "TEXT")
         _add_column_if_missing(conn, "bookings", "verified", "INTEGER DEFAULT 0")
         _add_column_if_missing(conn, "bookings", "verification_checks", "TEXT")
+        _add_column_if_missing(conn, "bookings", "verification_checked_at", "TEXT")
         _add_column_if_missing(conn, "bookings", "verification_outcome", "TEXT")
         _add_column_if_missing(conn, "bookings", "drift_json", "TEXT")
         _add_column_if_missing(conn, "bookings", "snapshot_hash", "TEXT")

@@ -278,6 +278,7 @@ class BoundedAgentCoordinator:
                     "fee": r["pickup_fee"],
                     "source_url": r["source_url"],
                     "retrieved_at": r["retrieved_at"],
+                    "fetch_mode": r.get("fetch_mode", "http"),
                 }
                 for r in retrieved_recyclers
             ],
@@ -336,6 +337,7 @@ class BoundedAgentCoordinator:
                         "pickup_available": r["pickup_available"],
                         "source_url": r["source_url"],
                         "retrieved_at": r["retrieved_at"],
+                        "fetch_mode": r.get("fetch_mode", "http"),
                         "area_match": "city" if city_match else "pin_prefix",
                         "matched_pin_prefix": next(
                             (prefix for prefix in next(
@@ -357,6 +359,7 @@ class BoundedAgentCoordinator:
                         "decision": "rejected",
                         "source_url": r["source_url"],
                         "retrieved_at": r["retrieved_at"],
+                        "fetch_mode": r.get("fetch_mode", "http"),
                         "area_match": "city" if city_match else "pin_prefix",
                         "evidence": f"Fetched HTML explicitly lists '{MATERIAL_LABELS[m_type]}' as rejected.",
                     }
