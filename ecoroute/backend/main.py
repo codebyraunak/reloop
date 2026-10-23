@@ -31,10 +31,12 @@ from pydantic import BaseModel, Field, field_validator
 
 # Internal modules
 from db import (
+    ai_disable_reason,
     db_connection,
     fetchone_dict,
     fetchall_dict,
     init_db,
+    is_ai_disabled,
     now_iso,
     TEST_MODE,
 )
@@ -370,7 +372,10 @@ def health() -> dict[str, Any]:
         ),
         "demo_controls_enabled": demo_controls_enabled(),
         "gemini_configured": bool(GEMINI_API_KEY),
-        "agent_orchestration_enabled": bool(GEMINI_API_KEY) and not TEST_MODE,
+        "gemini_enabled": bool(GEMINI_API_KEY) and not is_ai_disabled(),
+        "ai_disabled": is_ai_disabled(),
+        "ai_disable_reason": ai_disable_reason(),
+        "agent_orchestration_enabled": bool(GEMINI_API_KEY) and not is_ai_disabled(),
         "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else None,
         "timestamp": now_iso(),
     }
@@ -586,7 +591,7 @@ def assistant(payload: AssistantInput) -> dict[str, Any]:
         )
 
     # The chat assistant is optional; intent extraction and pickup matching remain deterministic.
-    if not GEMINI_API_KEY or TEST_MODE:
+    if not GEMINI_API_KEY or is_ai_disabled():
         return {
             "reply": f"[Deterministic fallback] {fallback_reply}",
             "item_type": primary_item,
@@ -609,7 +614,7 @@ def assistant(payload: AssistantInput) -> dict[str, Any]:
             "error": (
                 "GEMINI_API_KEY not configured."
                 if not GEMINI_API_KEY
-                else "Gemini calls are disabled in TEST_MODE."
+                else "Gemini calls are disabled by AI_DISABLED, TEST_MODE, or automated test execution."
             ),
         }
 

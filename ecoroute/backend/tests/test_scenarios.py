@@ -6,7 +6,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -889,7 +889,7 @@ def test_gemini_orchestration_uses_fake_client_tools_and_retries_once(monkeypatc
             return response
 
     fake = SimpleNamespace(models=FakeModels())
-    monkeypatch.setattr(agent_module, "TEST_MODE", False)
+    monkeypatch.setattr(agent_module, "is_ai_disabled", lambda: False)
     monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
 
     coordinator = agent_module.BoundedAgentCoordinator(
@@ -951,7 +951,7 @@ def test_gemini_tool_order_runs_prerequisites_on_backend(monkeypatch):
         def generate_content(self, **kwargs):
             return self.responses.pop(0)
 
-    monkeypatch.setattr(agent_module, "TEST_MODE", False)
+    monkeypatch.setattr(agent_module, "is_ai_disabled", lambda: False)
     monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
     coordinator = agent_module.BoundedAgentCoordinator(
         request_id="EW-FAKEORDER",
@@ -1000,7 +1000,7 @@ def test_gemini_tool_execution_cap_returns_responses_for_all_calls(monkeypatch):
             self.contents.append(copy.deepcopy(kwargs["contents"]))
             return self.responses.pop(0)
 
-    monkeypatch.setattr(agent_module, "TEST_MODE", False)
+    monkeypatch.setattr(agent_module, "is_ai_disabled", lambda: False)
     monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
     fake = SimpleNamespace(models=FakeModels())
     coordinator = agent_module.BoundedAgentCoordinator(
@@ -1059,7 +1059,7 @@ def test_gemini_failure_falls_back_with_exception_type_only(monkeypatch):
         def generate_content(self, **kwargs):
             raise BadRequest("secret fake key must not be returned")
 
-    monkeypatch.setattr(agent_module, "TEST_MODE", False)
+    monkeypatch.setattr(agent_module, "is_ai_disabled", lambda: False)
     monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
     coordinator = agent_module.BoundedAgentCoordinator(
         request_id="EW-FAKEFAIL",
@@ -1082,6 +1082,74 @@ def test_gemini_failure_falls_back_with_exception_type_only(monkeypatch):
     assert result["agent_exception"] == "BadRequest"
     assert "secret fake key" not in json.dumps(result)
     assert all(trace["actor"] == "backend" for trace in result["agent_trace"])
+
+
+@pytest.mark.parametrize("flag_value", ["0", "false", "off", "no", ""])
+def test_local_sqlite_isolation_does_not_disable_ai_for_false_flags(monkeypatch, tmp_path, flag_value):
+    monkeypatch.setenv("ECOROUTE_DB", str(tmp_path / "local-isolated.sqlite"))
+    monkeypatch.setenv("AI_DISABLED", flag_value)
+    monkeypatch.setenv("TEST_MODE", "false")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    assert db_module.is_test_mode() is True
+    assert db_module.is_ai_disabled() is False
+
+
+def test_explicit_ai_disable_and_test_mode_flags_are_respected(monkeypatch):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("TEST_MODE", "false")
+    monkeypatch.setenv("AI_DISABLED", "true")
+    assert db_module.is_ai_disabled() is True
+
+    monkeypatch.setenv("AI_DISABLED", "false")
+    monkeypatch.setenv("TEST_MODE", "yes")
+    assert db_module.is_ai_disabled() is True
+
+
+def test_assistant_calls_mocked_gemini_with_local_sqlite_and_keeps_extracted_quantity(monkeypatch, tmp_path):
+    class FakeModels:
+        def __init__(self):
+            self.calls = []
+
+        def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(text="I can help you plan recycling for three mobile phones.")
+
+    fake_models = FakeModels()
+    fake_client = SimpleNamespace(models=fake_models)
+    google_module = ModuleType("google")
+    genai_module = ModuleType("google.genai")
+    types_module = ModuleType("google.genai.types")
+    genai_module.Client = lambda api_key: fake_client
+    genai_module.types = types_module
+    types_module.GenerateContentConfig = lambda **kwargs: kwargs
+    google_module.genai = genai_module
+    monkeypatch.setitem(sys.modules, "google", google_module)
+    monkeypatch.setitem(sys.modules, "google.genai", genai_module)
+    monkeypatch.setitem(sys.modules, "google.genai.types", types_module)
+
+    monkeypatch.setenv("ECOROUTE_DB", str(tmp_path / "assistant-local.sqlite"))
+    monkeypatch.setenv("AI_DISABLED", "false")
+    monkeypatch.setenv("TEST_MODE", "false")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(main_module, "GEMINI_API_KEY", "mock-test-key")
+
+    response = client.post("/api/assistant", json={"message": "I have 3 mobile phones"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ai_powered"] is True
+    assert body["fallback_used"] is False
+    assert body["item_type"] == "mobile_phone"
+    assert body["quantity"] == 3
+    assert [
+        {"item_type": item["item_type"], "quantity": item["quantity"]}
+        for item in body["items"]
+    ] == [{"item_type": "mobile_phone", "quantity": 3}]
+    assert len(fake_models.calls) == 1
+    assert fake_models.calls[0]["contents"] == "I have 3 mobile phones"
+    assert db_module.is_test_mode() is True
+    assert db_module.is_ai_disabled() is False
 
 
 def test_assistant_separates_budget_from_quantity():
@@ -1276,8 +1344,27 @@ def test_health_endpoint():
     assert body["database_status"] == "connected"
     assert body["database_dialect"] == "sqlite"
     assert isinstance(body["gemini_configured"], bool)
+    assert body["gemini_enabled"] is False
+    assert body["ai_disabled"] is True
     assert body["agent_orchestration_enabled"] is False
     assert "DATABASE_URL" not in body
+
+
+def test_health_gemini_enabled_with_isolated_sqlite(monkeypatch, tmp_path):
+    monkeypatch.setenv("ECOROUTE_DB", str(tmp_path / "health-local.sqlite"))
+    monkeypatch.setenv("AI_DISABLED", "false")
+    monkeypatch.setenv("TEST_MODE", "false")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(main_module, "GEMINI_API_KEY", "mock-test-key")
+
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert db_module.is_test_mode() is True
+    assert body["gemini_configured"] is True
+    assert body["gemini_enabled"] is True
+    assert body["ai_disabled"] is False
+    assert body["agent_orchestration_enabled"] is True
 
 
 def test_no_collected_status_exists_anywhere():

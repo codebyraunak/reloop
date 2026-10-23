@@ -14,9 +14,32 @@ logger = logging.getLogger("ecoroute.db")
 
 BASE_DIR = Path(__file__).resolve().parent
 
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_ai_disabled() -> bool:
+    """Disable Gemini only for explicit AI/test settings or active pytest execution."""
+    return ai_disable_reason() is not None
+
+
+def ai_disable_reason() -> Optional[str]:
+    """Return the explicit reason Gemini is disabled, without consulting DB isolation."""
+    if env_flag("AI_DISABLED"):
+        return "AI_DISABLED"
+    if env_flag("TEST_MODE"):
+        return "TEST_MODE"
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return "automated test execution"
+    return None
+
+
 def is_test_mode() -> bool:
     return bool(
-        os.getenv("TEST_MODE")
+        env_flag("TEST_MODE")
         or os.getenv("PYTEST_CURRENT_TEST")
         or os.getenv("ECOROUTE_DB", "").strip()
     )

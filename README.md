@@ -18,7 +18,7 @@ See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the system diagram and ag
 
 ## Gemini: exact role and fallback
 
-The planner uses Gemini only when `GEMINI_API_KEY` is configured and `TEST_MODE` is off. It exposes five zero-argument tools over server-side state: `validate_details`, `fetch_recycler_profiles`, `match_items`, `compare_fees`, and `draft_plan`. Gemini can choose their order; the backend enforces dependencies, executes each tool, and runs any remaining pipeline steps deterministically after at most six tool executions.
+The planner uses Gemini only when `GEMINI_API_KEY` is configured and AI has not been explicitly disabled. Set `AI_DISABLED=1` or `TEST_MODE=1` to disable Gemini; automated pytest execution also disables all Gemini network calls. Setting `ECOROUTE_DB` to use an isolated local SQLite database does not disable Gemini. The planner exposes five zero-argument tools over server-side state: `validate_details`, `fetch_recycler_profiles`, `match_items`, `compare_fees`, and `draft_plan`. Gemini can choose their order; the backend enforces dependencies, executes each tool, and runs any remaining pipeline steps deterministically after at most six tool executions.
 
 Backend code remains authoritative for validation, source parsing, material decisions, service area, fees, approval requirements, and booking. Gemini cannot approve or book. Its optional explanation is included only if it consists of exactly two sentences that are verbatim tool-result strings. A 429 or 5xx is retried once. On other Gemini errors, the backend completes deterministically and reports only the exception type in `agent_exception`; no key or exception message is returned.
 
@@ -58,6 +58,7 @@ Copy `.env.example` to `.env` for local use. Never commit `.env` or real credent
 |---|---|
 | `GEMINI_API_KEY` | Optional server-side key for the Gemini chat and planner orchestration. Never expose it to the browser. |
 | `GEMINI_MODEL` | Gemini model name; defaults to `gemini-flash-lite-latest`. |
+| `AI_DISABLED` | Explicitly disables Gemini when set to `1`, `true`, `yes`, or `on`; defaults to `0`. |
 | `DATABASE_URL` | Optional PostgreSQL connection URL. When unset, the app uses SQLite. |
 | `PUBLIC_BASE_URL` | Public application URL used by the mock-source fetcher; local request URL is used as a fallback. |
 | `CORS_ORIGINS` | Comma-separated allowed origins, or `*` for the demo default. |

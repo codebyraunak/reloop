@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from db import TEST_MODE, db_connection, now_iso
+from db import db_connection, is_ai_disabled, now_iso
 from mock_recyclers import (
     MATERIAL_LABELS,
     SEED_RECYCLERS,
@@ -918,7 +918,7 @@ class BoundedAgentCoordinator:
         preferred_centre: Optional[str] = None,
     ) -> dict[str, Any]:
         self._begin_pipeline(items, city, pincode, max_fee, preferred_centre)
-        if not TEST_MODE and os.getenv("GEMINI_API_KEY", "").strip():
+        if not is_ai_disabled() and os.getenv("GEMINI_API_KEY", "").strip():
             try:
                 self.run_gemini_loop(self._create_gemini_client())
             except Exception as exc:
