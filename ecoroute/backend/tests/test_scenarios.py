@@ -986,3 +986,70 @@ def test_no_collected_status_exists_anywhere():
         ))
     assert request_rows == []
     assert booking_rows == []
+
+
+def test_multi_centre_booking_snapshot_verifies_each_assignment():
+    created = client.post("/api/requests", json={
+        "items": [
+            {"item_type": "paper", "quantity": 1},
+            {"item_type": "battery", "quantity": 1},
+        ],
+        "city": "Mysuru",
+        "pincode": "570001",
+        "max_fee": 250,
+    })
+    assert created.status_code == 200
+    request = created.json()
+    assert request["status"] == "draft"
+    plan = request["plan"]
+    assert {row["recycler_id"] for row in plan["centres"]} == {
+        "mock-recycler-b", "mock-recycler-c",
+    }
+
+    approval = client.post(
+        f"/api/requests/{request['id']}/approval",
+        json={"approved": True},
+    )
+    assert approval.status_code == 200
+    booking = client.post(f"/api/requests/{request['id']}/book")
+    assert booking.status_code == 200
+
+    snapshot = client.get(f"/api/requests/{request['id']}").json()["booking"]["approved_snapshot"]
+    assert {row["recycler_id"] for row in snapshot["centres"]} == {
+        "mock-recycler-b", "mock-recycler-c",
+    }
+    verification = client.post(f"/api/requests/{request['id']}/verify")
+    assert verification.status_code == 200
+    result = verification.json()
+    assert result["status"] == "verified"
+    assert result["verified"] is True
+    assert any(row["check"].endswith("accepts:paper") and row["ok"] for row in result["checks"])
+    assert any(row["check"].endswith("accepts:battery") and row["ok"] for row in result["checks"])
+
+
+def test_approval_is_immutable_after_first_decision():
+    created = client.post("/api/requests", json={
+        "item_type": "laptop", "quantity": 1, "city": "Mysuru",
+        "pincode": "570001", "max_fee": 100,
+    }).json()
+    first = client.post(
+        f"/api/requests/{created['id']}/approval",
+        json={"approved": True},
+    )
+    assert first.status_code == 200
+    second = client.post(
+        f"/api/requests/{created['id']}/approval",
+        json={"approved": False},
+    )
+    assert second.status_code == 409
+
+
+def test_request_collection_requires_specific_id():
+    assert client.get("/api/requests").status_code == 400
+    created = client.post("/api/requests", json={
+        "item_type": "laptop", "quantity": 1, "city": "Mysuru",
+        "pincode": "570001", "max_fee": 100,
+    }).json()
+    response = client.get("/api/requests", params={"request_id": created["id"]})
+    assert response.status_code == 200
+    assert [row["id"] for row in response.json()] == [created["id"]]

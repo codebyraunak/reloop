@@ -43,6 +43,7 @@ SEED_RECYCLERS: list[dict[str, Any]] = [
         "slug": "greenloop",
         "name": "GreenLoop Electronics Recovery",
         "area": "Mysuru",
+        "pin_prefixes": ["570"],
         "accepted_materials": [
             "laptop", "mobile_phone", "desktop_computer", "tablet",
             "television", "printer", "camera", "keyboard_mouse",
@@ -59,6 +60,7 @@ SEED_RECYCLERS: list[dict[str, Any]] = [
         "aliases": ["circular-earth"],
         "name": "VoltCycle Battery & Tech Logistics",
         "area": "Mysuru",
+        "pin_prefixes": ["570"],
         "accepted_materials": [
             "battery", "mobile_phone", "laptop", "cable_charger", "audio_device"
         ],
@@ -72,6 +74,7 @@ SEED_RECYCLERS: list[dict[str, Any]] = [
         "slug": "paperback",
         "name": "PaperBack Materials Centre",
         "area": "Mysuru",
+        "pin_prefixes": ["570"],
         "accepted_materials": ["paper"],
         "rejected_materials": [
             "battery", "laptop", "mobile_phone", "desktop_computer",
@@ -87,6 +90,7 @@ SEED_RECYCLERS: list[dict[str, Any]] = [
         "slug": "apex",
         "name": "Apex EcoCollect Special Services",
         "area": "Mysuru",
+        "pin_prefixes": ["570"],
         "accepted_materials": [
             "laptop", "mobile_phone", "desktop_computer", "battery",
             "paper", "television", "tablet", "printer", "camera",

@@ -135,9 +135,15 @@ def extract_assistant_intent(message: str) -> dict[str, Any]:
 class BoundedAgentCoordinator:
     """Bounded multi-step agent tool loop capped at ~6 steps with traceable execution."""
 
-    def __init__(self, request_id: Optional[str] = None, app_instance: Any = None):
+    def __init__(
+        self,
+        request_id: Optional[str] = None,
+        app_instance: Any = None,
+        excluded_centres: Optional[set[str]] = None,
+    ):
         self.request_id = request_id or ("EW-" + uuid.uuid4().hex[:8].upper())
         self.app_instance = app_instance
+        self.excluded_centres = excluded_centres or set()
         self.trace: list[dict[str, Any]] = []
 
     def _record_step(self, step: int, tool: str, inp: Any, output: Any, evidence: Optional[str] = None, error: Optional[str] = None) -> dict[str, Any]:
@@ -180,6 +186,7 @@ class BoundedAgentCoordinator:
         city: str,
         pincode: str,
         max_fee: float,
+        preferred_centre: Optional[str] = None,
     ) -> dict[str, Any]:
         """Executes the full 6-step bounded agent workflow with traceable evidence."""
         # -------------------------------------------------------------
@@ -292,9 +299,25 @@ class BoundedAgentCoordinator:
             item_evidence = []
 
             for r in retrieved_recyclers:
-                in_area = clean_city.lower() in r["area"].lower() or r["area"].lower() in clean_city.lower()
+                city_match = clean_city.lower() in r["area"].lower() or r["area"].lower() in clean_city.lower()
+                pin_match = any(
+                    clean_pin.startswith(prefix)
+                    for prefix in next(
+                        (seed.get("pin_prefixes", []) for seed in SEED_RECYCLERS if seed["id"] == r["id"]),
+                        [],
+                    )
+                )
+                in_area = city_match or pin_match
                 if not in_area:
                     continue
+
+                excluded = r["id"] in self.excluded_centres or r["name"] in self.excluded_centres
+                preferred_match = not preferred_centre or preferred_centre in {
+                    r["id"], r["name"], next(
+                        (seed["slug"] for seed in SEED_RECYCLERS if seed["id"] == r["id"]),
+                        "",
+                    ),
+                }
 
                 if m_type in r["accepted_materials"]:
                     evidence = {
@@ -304,11 +327,19 @@ class BoundedAgentCoordinator:
                         "pickup_available": r["pickup_available"],
                         "source_url": r["source_url"],
                         "retrieved_at": r["retrieved_at"],
+                        "area_match": "city" if city_match else "pin_prefix",
+                        "matched_pin_prefix": next(
+                            (prefix for prefix in next(
+                                (seed.get("pin_prefixes", []) for seed in SEED_RECYCLERS if seed["id"] == r["id"]),
+                                [],
+                            ) if clean_pin.startswith(prefix)),
+                            None,
+                        ),
                         "decision": "accepted",
                         "evidence": f"Fetched HTML lists '{MATERIAL_LABELS[m_type]}' in accepted materials.",
                     }
                     item_evidence.append(evidence)
-                    if r["pickup_available"]:
+                    if r["pickup_available"] and not excluded and preferred_match:
                         accepted_by.append(evidence)
                 elif m_type in r["rejected_materials"]:
                     evidence = {
@@ -317,6 +348,7 @@ class BoundedAgentCoordinator:
                         "decision": "rejected",
                         "source_url": r["source_url"],
                         "retrieved_at": r["retrieved_at"],
+                        "area_match": "city" if city_match else "pin_prefix",
                         "evidence": f"Fetched HTML explicitly lists '{MATERIAL_LABELS[m_type]}' as rejected.",
                     }
                     rejected_by.append(evidence)
@@ -395,6 +427,23 @@ class BoundedAgentCoordinator:
         ) else None
         best_fee = sum(centre["fee"] for centre in selected_by_id.values())
         fee_exception_required = best_fee > max_fee
+        centres_by_id: dict[str, dict[str, Any]] = {}
+        for evaluation in per_item_evaluations:
+            assignment = evaluation["selected_recycler"]
+            if not assignment:
+                continue
+            centre = centres_by_id.setdefault(assignment["recycler_id"], {
+                "recycler_id": assignment["recycler_id"],
+                "recycler_name": assignment["name"],
+                "fee": assignment["fee"],
+                "source_url": assignment["source_url"],
+                "retrieved_at": assignment["retrieved_at"],
+                "items": [],
+            })
+            centre["items"].append({
+                "item_type": evaluation["item_type"],
+                "quantity": evaluation["quantity"],
+            })
 
         step4_out = {
             "selected_centre": selected_recycler["name"] if selected_recycler else "Split / No single centre",
@@ -477,6 +526,8 @@ class BoundedAgentCoordinator:
             "location": f"{clean_city} {clean_pin}".strip(),
             "max_fee": max_fee,
             "total_fee": best_fee,
+            "preferred_centre": preferred_centre,
+            "centres": list(centres_by_id.values()),
             "selected_recycler": {
                 "recycler_id": selected_recycler["recycler_id"],
                 "recycler_name": selected_recycler["name"],

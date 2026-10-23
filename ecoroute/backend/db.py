@@ -211,6 +211,7 @@ def run_migrations() -> None:
                     approved INTEGER NOT NULL,
                     accept_fee_exception INTEGER NOT NULL DEFAULT 0,
                     approved_plan_json TEXT NOT NULL,
+                    snapshot_hash TEXT,
                     approved_version TEXT NOT NULL DEFAULT '1.0',
                     approved_at TEXT NOT NULL,
                     FOREIGN KEY(request_id) REFERENCES requests(id)
@@ -224,6 +225,10 @@ def run_migrations() -> None:
                     submitted_at TEXT NOT NULL,
                     verified_at TEXT,
                     verification_evidence TEXT,
+                    verification_checks TEXT,
+                    verification_outcome TEXT,
+                    drift_json TEXT,
+                    snapshot_hash TEXT,
                     verified INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY(request_id) REFERENCES requests(id)
                 );
@@ -281,6 +286,7 @@ def run_migrations() -> None:
                     approved INTEGER NOT NULL,
                     accept_fee_exception INTEGER NOT NULL DEFAULT 0,
                     approved_plan_json TEXT NOT NULL,
+                    snapshot_hash TEXT,
                     approved_version TEXT NOT NULL DEFAULT '1.0',
                     approved_at TEXT NOT NULL,
                     FOREIGN KEY(request_id) REFERENCES requests(id)
@@ -294,6 +300,10 @@ def run_migrations() -> None:
                     submitted_at TEXT NOT NULL,
                     verified_at TEXT,
                     verification_evidence TEXT,
+                    verification_checks TEXT,
+                    verification_outcome TEXT,
+                    drift_json TEXT,
+                    snapshot_hash TEXT,
                     verified INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY(request_id) REFERENCES requests(id)
                 );
@@ -335,10 +345,15 @@ def run_migrations() -> None:
         _add_column_if_missing(conn, "requests", "pincode", "TEXT")
         _add_column_if_missing(conn, "requests", "items_json", "TEXT")
         _add_column_if_missing(conn, "approvals", "accept_fee_exception", "INTEGER DEFAULT 0")
+        _add_column_if_missing(conn, "approvals", "snapshot_hash", "TEXT")
         _add_column_if_missing(conn, "approvals", "approved_version", "TEXT DEFAULT '1.0'")
         _add_column_if_missing(conn, "bookings", "idempotency_key", "TEXT")
         _add_column_if_missing(conn, "bookings", "approved_snapshot_json", "TEXT")
         _add_column_if_missing(conn, "bookings", "verified", "INTEGER DEFAULT 0")
+        _add_column_if_missing(conn, "bookings", "verification_checks", "TEXT")
+        _add_column_if_missing(conn, "bookings", "verification_outcome", "TEXT")
+        _add_column_if_missing(conn, "bookings", "drift_json", "TEXT")
+        _add_column_if_missing(conn, "bookings", "snapshot_hash", "TEXT")
         _add_column_if_missing(conn, "test_runs", "explanation", "TEXT")
 
         # Normalize legacy statuses to lowercase standard lifecycle

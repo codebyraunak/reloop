@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -121,6 +122,7 @@ class RequestCreate(BaseModel):
     city: str = Field(..., min_length=1, max_length=100)
     pincode: str = Field(..., pattern=r"^[1-9][0-9]{5}$")
     max_fee: float = Field(..., ge=0.0, le=100000.0, description="User fee budget limit (cannot be negative)")
+    preferred_centre: Optional[str] = None
 
     @field_validator("city", "pincode", mode="before")
     @classmethod
@@ -131,6 +133,7 @@ class RequestCreate(BaseModel):
 class ApprovalInput(BaseModel):
     approved: bool
     accept_fee_exception: bool = False
+    acknowledge_partial: bool = False
 
 
 class AssistantInput(BaseModel):
@@ -213,6 +216,7 @@ def make_plan(request: RequestCreate) -> dict[str, Any]:
         city=city,
         pincode=pincode,
         max_fee=request.max_fee,
+        preferred_centre=request.preferred_centre,
     )
     if result.get("status") == "failed" and result.get("plan") is None:
         raise HTTPException(status_code=422, detail=result.get("reason", "Validation error"))
@@ -258,6 +262,12 @@ def request_row(row_dict: dict[str, Any]) -> dict[str, Any]:
             book["status"] = "requested"
         if book.get("approved_snapshot_json"):
             book["approved_snapshot"] = json.loads(book.pop("approved_snapshot_json"))
+        for column, public_name in (
+            ("verification_checks", "checks"),
+            ("drift_json", "drift"),
+        ):
+            if book.get(column):
+                book[public_name] = json.loads(book.pop(column))
         book["display_status"] = "Requested, not yet collected."
         res["booking"] = book
     else:
@@ -320,6 +330,11 @@ def health() -> dict[str, Any]:
         "version": "1.0.0",
         "mode": "evidence-backed-coordinator",
         "database_status": db_status,
+        "database_dialect": (
+            "postgres"
+            if os.getenv("DATABASE_URL", "").strip() and not TEST_MODE
+            else "sqlite"
+        ),
         "gemini_configured": bool(GEMINI_API_KEY),
         "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else None,
         "timestamp": now_iso(),
@@ -640,6 +655,7 @@ def create_request(payload: RequestCreate) -> dict[str, Any]:
         city=city,
         pincode=pincode,
         max_fee=payload.max_fee,
+        preferred_centre=payload.preferred_centre,
     )
     if agent_res.get("status") == "failed" and agent_res.get("plan") is None:
         raise HTTPException(status_code=422, detail=agent_res.get("reason", "Validation failure"))
@@ -678,16 +694,15 @@ def create_request(payload: RequestCreate) -> dict[str, Any]:
 
 @app.get("/api/requests")
 def list_requests(request_id: Optional[str] = None) -> list[dict[str, Any]]:
-    """Protects personal data: returns specific request if request_id is supplied,
-    or returns only demo test records, never exposing all users' pickup requests publicly.
-    """
+    """Only serves a specific request; the collection is never publicly enumerable."""
+    if not request_id:
+        raise HTTPException(status_code=400, detail="A request_id is required.")
     with db_connection() as conn:
-        if request_id:
-            cursor = conn.execute("SELECT * FROM requests WHERE id = ?", (request_id.strip(),))
-        else:
-            # Only return requests created for testing / demo, limiting exposure of arbitrary user entries
-            cursor = conn.execute("SELECT * FROM requests WHERE id LIKE 'TEST-%' OR id LIKE 'EW-%' ORDER BY created_at DESC LIMIT 10")
-        rows = fetchall_dict(cursor)
+        cursor = conn.execute("SELECT * FROM requests WHERE id = ?", (request_id.strip(),))
+        row = fetchone_dict(cursor)
+    if not row:
+        raise HTTPException(status_code=404, detail="Pickup request not found.")
+    rows = [row]
     return [request_row(r) for r in rows]
 
 
@@ -721,6 +736,12 @@ def approve_request(request_id: str, payload: ApprovalInput) -> dict[str, Any]:
         plan = json.loads(row["plan_json"])
         selected = plan.get("selected_recycler")
         total_fee = plan.get("total_fee", 0.0)
+        current_status = row["status"].casefold()
+        if current_status not in {"draft", "awaiting_approval"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Approval is only available for draft or awaiting_approval requests, not '{current_status}'.",
+            )
 
         # Gate on fee exception: if proposed fee exceeds user's limit, explicit accept_fee_exception is required
         if total_fee > row["max_fee"] and not payload.accept_fee_exception and payload.approved:
@@ -735,29 +756,42 @@ def approve_request(request_id: str, payload: ApprovalInput) -> dict[str, Any]:
                 detail="Cannot approve: no matching recycler was evidenced for the requested materials."
             )
 
+        partial_items = [
+            item for item in plan.get("items", [])
+            if item.get("decision") in {"rejected", "unresolved"}
+        ]
+        if payload.approved and partial_items and not payload.acknowledge_partial:
+            raise HTTPException(
+                status_code=409,
+                detail="Explicit acknowledgement of rejected or unresolved items is required.",
+            )
+
         timestamp = now_iso()
         new_status = "approved" if payload.approved else "declined"
         plan["approval_decision"] = {
             "approved": payload.approved,
             "accepted_fee_exception": payload.accept_fee_exception,
+            "acknowledged_partial": payload.acknowledge_partial,
             "approved_at": timestamp,
             "version": "1.0",
         }
-        approved_snapshot = json.dumps(plan)
+        approved_snapshot = json.dumps(plan, sort_keys=True, separators=(",", ":"))
+        snapshot_hash = hashlib.sha256(approved_snapshot.encode("utf-8")).hexdigest()
 
         # Store immutable approved snapshot in approvals table
         conn.execute(
             """
-            INSERT INTO approvals(request_id, approved, accept_fee_exception, approved_plan_json, approved_version, approved_at)
-            VALUES(?, ?, ?, ?, '1.0', ?)
-            ON CONFLICT(request_id) DO UPDATE SET
-                approved=EXCLUDED.approved,
-                accept_fee_exception=EXCLUDED.accept_fee_exception,
-                approved_plan_json=EXCLUDED.approved_plan_json,
-                approved_version=EXCLUDED.approved_version,
-                approved_at=EXCLUDED.approved_at
+            INSERT INTO approvals(request_id, approved, accept_fee_exception, approved_plan_json, snapshot_hash, approved_version, approved_at)
+            VALUES(?, ?, ?, ?, ?, '1.0', ?)
             """,
-            (request_id, int(payload.approved), int(payload.accept_fee_exception), approved_snapshot, timestamp),
+            (
+                request_id,
+                int(payload.approved),
+                int(payload.accept_fee_exception),
+                approved_snapshot,
+                snapshot_hash,
+                timestamp,
+            ),
         )
 
         conn.execute(
@@ -819,21 +853,58 @@ def book_request(request_id: str) -> dict[str, Any]:
         # Book strictly from the immutable approved snapshot
         approved_snapshot = approval["approved_plan_json"]
         plan = json.loads(approved_snapshot)
-        selected = plan.get("selected_recycler") or (plan.get("items", [{}])[0].get("suggested_recycler"))
-        if not selected:
+        snapshot_hash = approval.get("snapshot_hash") or hashlib.sha256(
+            approved_snapshot.encode("utf-8")
+        ).hexdigest()
+        centres = plan.get("centres") or []
+        if not centres:
+            grouped: dict[str, dict[str, Any]] = {}
+            for item in plan.get("items", []):
+                assignment = item.get("suggested_recycler")
+                if not assignment:
+                    continue
+                centre_id = assignment.get("recycler_id")
+                centre = grouped.setdefault(centre_id, {
+                    "recycler_id": centre_id,
+                    "recycler_name": assignment.get("recycler_name"),
+                    "fee": assignment.get("fee"),
+                    "source_url": assignment.get("source_url"),
+                    "retrieved_at": assignment.get("retrieved_at"),
+                    "items": [],
+                })
+                centre["items"].append({
+                    "item_type": item.get("item_type"),
+                    "quantity": item.get("quantity"),
+                })
+            centres = list(grouped.values())
+            plan["centres"] = centres
+            approved_snapshot = json.dumps(plan, sort_keys=True, separators=(",", ":"))
+            snapshot_hash = hashlib.sha256(approved_snapshot.encode("utf-8")).hexdigest()
+        if not centres:
             raise HTTPException(status_code=409, detail="No evidenced recycler exists in the approved snapshot.")
 
-        reference = "MOCK-" + uuid.uuid4().hex[:8].upper()
+        reference_digest = hashlib.sha256(
+            f"{request_id}:{snapshot_hash}".encode("utf-8")
+        ).hexdigest()[:12].upper()
+        reference = "MOCK-" + reference_digest
         timestamp = now_iso()
 
         # The booking action moves state to requested. It NEVER marks items collected!
         conn.execute(
             """
-            INSERT INTO bookings(request_id, reference, status, idempotency_key, approved_snapshot_json, submitted_at, verified)
-            VALUES(?, ?, 'requested', ?, ?, ?, 0)
+            INSERT INTO bookings(request_id, reference, status, idempotency_key, approved_snapshot_json, snapshot_hash, submitted_at, verified)
+            VALUES(?, ?, 'requested', ?, ?, ?, ?, 0)
+            ON CONFLICT(request_id) DO NOTHING
             """,
-            (request_id, reference, request_id, approved_snapshot, timestamp),
+            (request_id, reference, request_id, approved_snapshot, snapshot_hash, timestamp),
         )
+        existing_book = fetchone_dict(conn.execute(
+            "SELECT * FROM bookings WHERE request_id = ?", (request_id,)
+        ))
+        if not existing_book:
+            raise HTTPException(status_code=500, detail="Booking insert did not create a booking record.")
+        reference = existing_book["reference"]
+        timestamp = existing_book["submitted_at"]
         conn.execute(
             "UPDATE requests SET status = 'requested', updated_at = ? WHERE id = ?",
             (timestamp, request_id),
@@ -865,54 +936,189 @@ def verify_booking(request_id: str) -> dict[str, Any]:
         if not approval:
             raise HTTPException(status_code=409, detail="No approval record associated with booking.")
 
-        approved_plan = json.loads(booking["approved_snapshot_json"] or approval["approved_plan_json"])
-        selected = approved_plan.get("selected_recycler") or approved_plan.get("items", [{}])[0].get("suggested_recycler")
+        approved_snapshot_json = booking["approved_snapshot_json"] or approval["approved_plan_json"]
+        approved_plan = json.loads(approved_snapshot_json)
+        centres = approved_plan.get("centres") or []
+        if not centres:
+            grouped: dict[str, dict[str, Any]] = {}
+            for item in approved_plan.get("items", []):
+                assignment = item.get("suggested_recycler")
+                if not assignment:
+                    continue
+                centre_id = assignment.get("recycler_id")
+                centre = grouped.setdefault(centre_id, {
+                    "recycler_id": centre_id,
+                    "recycler_name": assignment.get("recycler_name"),
+                    "fee": assignment.get("fee"),
+                    "items": [],
+                })
+                centre["items"].append({
+                    "item_type": item.get("item_type"),
+                    "quantity": item.get("quantity"),
+                })
+            centres = list(grouped.values())
 
-        # Independent verification check against live mock recycler website profile
-        recycler_id = selected.get("recycler_id") if selected else None
-        slug_match = next((s["slug"] for s in SEED_RECYCLERS if s["id"] == recycler_id), None)
+        checks: list[dict[str, Any]] = []
+        drift: list[dict[str, Any]] = []
+        unresolved = False
 
-        evidence_verified = False
-        reason = ""
-        if slug_match:
-            live_ev = retrieve_mock_recycler_evidence(slug_match, app_instance=app)
-            if live_ev.get("status") != "unresolved" and live_ev.get("pickup_available"):
-                evidence_verified = True
-                reason = (
-                    f"Independent verification confirmed: booking reference {booking['reference']} is valid, "
-                    f"approved snapshot matches recycler '{live_ev['name']}', and live source HTML verifies acceptance."
-                )
-            else:
-                reason = f"Mock recycler live source is currently unavailable or indicates pickup unavailable ({live_ev.get('error', 'offline')})."
+        stored_hash = booking.get("snapshot_hash") or approval.get("snapshot_hash")
+        computed_hash = hashlib.sha256(approved_snapshot_json.encode("utf-8")).hexdigest()
+        checks.append({
+            "check": "approved_snapshot_hash",
+            "intended": stored_hash,
+            "observed": computed_hash,
+            "ok": bool(stored_hash) and stored_hash == computed_hash,
+        })
+        expected_reference = "MOCK-" + hashlib.sha256(
+            f"{request_id}:{stored_hash or ''}".encode("utf-8")
+        ).hexdigest()[:12].upper()
+        checks.append({
+            "check": "booking_reference",
+            "intended": expected_reference,
+            "observed": booking["reference"],
+            "ok": booking["reference"] == expected_reference,
+        })
+        if not stored_hash or stored_hash != computed_hash:
+            drift.append({
+                "centre": "booking",
+                "field": "snapshot_hash",
+                "approved_value": stored_hash,
+                "live_value": computed_hash,
+            })
+        if booking["reference"] != expected_reference:
+            drift.append({
+                "centre": "booking",
+                "field": "reference",
+                "approved_value": expected_reference,
+                "live_value": booking["reference"],
+            })
+
+        for centre in centres:
+            centre_id = centre.get("recycler_id")
+            seed = next((entry for entry in SEED_RECYCLERS if entry["id"] == centre_id), None)
+            display_name = centre.get("recycler_name") or centre_id or "unknown centre"
+            if not seed:
+                unresolved = True
+                checks.append({
+                    "check": f"{display_name}:profile_available",
+                    "intended": "known recycler profile",
+                    "observed": "profile mapping unavailable",
+                    "ok": False,
+                })
+                continue
+
+            live = retrieve_mock_recycler_evidence(seed["slug"], app_instance=app)
+            if live.get("status") == "unresolved" or not live.get("evidence_verified"):
+                unresolved = True
+                checks.append({
+                    "check": f"{display_name}:profile_available",
+                    "intended": "retrievable and parseable profile",
+                    "observed": live.get("error", "profile unresolved"),
+                    "ok": False,
+                })
+                continue
+            checks.append({
+                "check": f"{display_name}:profile_available",
+                "intended": centre_id,
+                "observed": live.get("id"),
+                "ok": live.get("id") == centre_id,
+            })
+
+            intended_fee = centre.get("fee")
+            observed_fee = live.get("pickup_fee")
+            fee_ok = intended_fee == observed_fee
+            checks.append({
+                "check": f"{display_name}:fee",
+                "intended": intended_fee,
+                "observed": observed_fee,
+                "ok": fee_ok,
+            })
+            if not fee_ok:
+                drift.append({
+                    "centre": display_name,
+                    "field": "fee",
+                    "approved_value": intended_fee,
+                    "live_value": observed_fee,
+                })
+
+            pickup_ok = live.get("pickup_available") is True
+            checks.append({
+                "check": f"{display_name}:pickup_available",
+                "intended": True,
+                "observed": live.get("pickup_available"),
+                "ok": pickup_ok,
+            })
+            if not pickup_ok:
+                drift.append({
+                    "centre": display_name,
+                    "field": "pickup_available",
+                    "approved_value": True,
+                    "live_value": live.get("pickup_available"),
+                })
+
+            for assigned in centre.get("items", []):
+                material = assigned.get("item_type")
+                accepted = material in live.get("accepted_materials", [])
+                checks.append({
+                    "check": f"{display_name}:accepts:{material}",
+                    "intended": True,
+                    "observed": accepted,
+                    "ok": accepted,
+                })
+                if not accepted:
+                    drift.append({
+                        "centre": display_name,
+                        "field": f"accepts:{material}",
+                        "approved_value": True,
+                        "live_value": accepted,
+                    })
+
+        all_ok = all(check["ok"] for check in checks)
+        outcome = "unresolved" if unresolved else "verified" if all_ok else "failed"
+        timestamp = now_iso()
+        verified_at = timestamp if outcome == "verified" else None
+        if outcome == "verified":
+            reason = "Live profiles match the approved materials, fees, pickup availability, snapshot hash, and booking reference."
+        elif outcome == "unresolved":
+            reason = "Verification is unresolved because one or more recycler profiles could not be retrieved or parsed."
         else:
-            reason = "Recycler profile could not be re-verified against live mock sources."
+            reason = "Verification failed because live evidence or booking data differs from the approved snapshot."
 
-        verified_at = now_iso()
-        if evidence_verified:
-            conn.execute(
-                "UPDATE bookings SET status = 'verified', verified = 1, verified_at = ?, verification_evidence = ? WHERE request_id = ?",
-                (verified_at, reason, request_id),
-            )
-            conn.execute(
-                "UPDATE requests SET status = 'verified', updated_at = ? WHERE id = ?",
-                (verified_at, request_id),
-            )
-            final_status = "verified"
-        else:
-            final_status = (
-                "requested"
-                if booking["status"].casefold() == "collected"
-                else booking["status"]
-            )
+        conn.execute(
+            """
+            UPDATE bookings
+            SET status = ?, verified = ?, verified_at = ?, verification_evidence = ?,
+                verification_checks = ?, verification_outcome = ?, drift_json = ?
+            WHERE request_id = ?
+            """,
+            (
+                outcome,
+                int(outcome == "verified"),
+                verified_at,
+                reason,
+                json.dumps(checks),
+                outcome,
+                json.dumps(drift),
+                request_id,
+            ),
+        )
+        conn.execute(
+            "UPDATE requests SET status = ?, updated_at = ? WHERE id = ?",
+            (outcome, timestamp, request_id),
+        )
+        final_status = outcome
 
     return {
         "request_id": request_id,
         "reference": booking["reference"],
         "status": final_status,
-        "verified": evidence_verified,
+        "verified": final_status == "verified",
         "collection_confirmed": False,
         "display_status": "Requested, not yet collected.",
         "evidence": reason,
+        "checks": checks,
+        "drift": drift,
         "verified_at": verified_at,
     }
 
