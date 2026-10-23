@@ -696,7 +696,7 @@
             </div>
           </div>
           <div class="chat-panel">
-            <div class="chat-head"><div class="bot-icon">✦</div><div><strong>ReLoop AI Assistant</strong><small id="chatStatus"><span class="online-dot" style="background:#b45309"></span>Checking assistant status…</small></div></div>
+            <div class="chat-head"><div class="bot-icon">✦</div><div><strong>ReLoop AI Assistant</strong><small id="chatStatus"><span class="online-dot" style="background:#b45309"></span>Connecting to backend…</small></div></div>
             <div class="chat-messages" id="chatMessages">
               <div class="bubble bot">Hi! 👋 Tell me which electronics you'd like to recycle and your city. I'll help you work out the next step.</div>
             </div>
@@ -1282,9 +1282,10 @@
     $('#planWithAiHero')?.addEventListener('click', (e) => { e.preventDefault(); prefillAiAssistant(); });
 
     // Health check initialization
-    fetch(`${API_BASE}/api/health`)
+    fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(6000) })
       .then(r => parseApiResponse(r, 'Health check failed'))
       .then(data => {
+        if (!data || data.status !== 'ok') throw new Error('Backend is not healthy.');
         const statusEl = $('#chatStatus');
         const disclaimerEl = $('#chatDisclaimer');
         if (data && data.gemini_configured) {

@@ -616,7 +616,7 @@ def assistant(payload: AssistantInput) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @app.post("/api/requests")
-def create_request(payload: RequestCreate) -> dict[str, Any]:
+def create_request(payload: RequestCreate, request: Request) -> dict[str, Any]:
     # Boundary validation
     # 1. Supported item type and quantity >= 1
     items_to_save = []
@@ -649,7 +649,11 @@ def create_request(payload: RequestCreate) -> dict[str, Any]:
 
     # Run bounded agent workflow
     request_id = "EW-" + uuid.uuid4().hex[:8].upper()
-    coordinator = BoundedAgentCoordinator(request_id=request_id, app_instance=app)
+    coordinator = BoundedAgentCoordinator(
+        request_id=request_id,
+        app_instance=app,
+        request_base_url=str(request.base_url).rstrip("/"),
+    )
     agent_res = coordinator.run_agent_workflow(
         items=items_to_save,
         city=city,

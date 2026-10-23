@@ -122,8 +122,10 @@ def get_public_base_url() -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def get_source_url(slug: str) -> str:
-    base = get_public_base_url()
+def get_source_url(slug: str, request_base_url: Optional[str] = None) -> str:
+    base = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/") or (
+        request_base_url or get_public_base_url()
+    ).rstrip("/")
     return f"{base}/mock-recycler/{slug}"
 
 
@@ -264,40 +266,62 @@ async def _fetch_asgi_source(app_instance: Any, source_url: str, slug: str) -> h
     source = httpx.URL(source_url)
     base_url = source.copy_with(path="/", query=None, fragment=None)
     async with httpx.AsyncClient(transport=transport, base_url=base_url) as client:
-        return await client.get(f"/mock-recycler/{slug}", timeout=4.0)
+        return await client.get(f"/mock-recycler/{slug}", timeout=6.0)
 
 
-def retrieve_mock_recycler_evidence(slug: str, app_instance: Any = None) -> dict[str, Any]:
+def retrieve_mock_recycler_evidence(
+    slug: str,
+    app_instance: Any = None,
+    request_base_url: Optional[str] = None,
+) -> dict[str, Any]:
     """Fetches the mock source page over HTTPX and parses only the returned HTML."""
     slug_clean = slug.strip().lower()
-    source_url = get_source_url(slug_clean)
+    source_url = get_source_url(slug_clean, request_base_url)
+    fetch_mode = "http"
+    parsed_url = httpx.URL(source_url)
+    if not parsed_url.is_absolute_url or not parsed_url.host:
+        return {
+            "status": "unresolved",
+            "error": f"Invalid mock recycler source URL: {source_url}",
+            "source_url": source_url,
+            "retrieved_at": now_iso(),
+            "fetch_mode": "http",
+        }
     try:
         if app_instance is not None:
             response = asyncio.run(_fetch_asgi_source(app_instance, source_url, slug_clean))
+            fetch_mode = "http"
         else:
-            with httpx.Client(timeout=4.0) as client:
+            with httpx.Client(timeout=6.0) as client:
                 response = client.get(source_url)
-    except httpx.TimeoutException:
-        return {
-            "status": "unresolved",
-            "error": f"Timed out fetching mock recycler source: {source_url}",
-            "source_url": source_url,
-            "retrieved_at": now_iso(),
-        }
     except ValueError:
         return {
             "status": "unresolved",
             "error": f"Invalid mock recycler source URL: {source_url}",
             "source_url": source_url,
             "retrieved_at": now_iso(),
+            "fetch_mode": "http",
         }
     except (httpx.HTTPError, RuntimeError) as exc:
-        return {
-            "status": "unresolved",
-            "error": f"Failed to fetch mock recycler source {source_url}: {exc}",
-            "source_url": source_url,
-            "retrieved_at": now_iso(),
-        }
+        if app_instance is None:
+            return {
+                "status": "unresolved",
+                "error": f"Failed to fetch mock recycler source {source_url}: {type(exc).__name__}",
+                "source_url": source_url,
+                "retrieved_at": now_iso(),
+                "fetch_mode": "http",
+            }
+        html = render_mock_recycler_html(slug_clean)
+        if html is None:
+            return {
+                "status": "unresolved",
+                "error": f"Failed to fetch mock recycler source {source_url}: {type(exc).__name__}",
+                "source_url": source_url,
+                "retrieved_at": now_iso(),
+                "fetch_mode": "in_process_fallback",
+            }
+        response = httpx.Response(200, text=html)
+        fetch_mode = "in_process_fallback"
 
     if response.status_code != 200:
         return {
@@ -305,10 +329,13 @@ def retrieve_mock_recycler_evidence(slug: str, app_instance: Any = None) -> dict
             "error": f"Mock recycler source returned HTTP {response.status_code}: {source_url}",
             "source_url": source_url,
             "retrieved_at": now_iso(),
+            "fetch_mode": fetch_mode,
+            "fetch_mode": fetch_mode,
         }
 
     try:
         data = parse_recycler_html(response.text, source_url)
+        data["fetch_mode"] = fetch_mode
         # Persist extracted source evidence into mock_recycler_sources table
         try:
             with db_connection() as conn:
@@ -335,14 +362,22 @@ def retrieve_mock_recycler_evidence(slug: str, app_instance: Any = None) -> dict
             "error": f"Failed to parse fetched mock recycler HTML from {source_url}: {parse_err}",
             "source_url": source_url,
             "retrieved_at": now_iso(),
+            "fetch_mode": fetch_mode,
         }
 
 
-def retrieve_all_mock_recyclers(app_instance: Any = None) -> list[dict[str, Any]]:
+def retrieve_all_mock_recyclers(
+    app_instance: Any = None,
+    request_base_url: Optional[str] = None,
+) -> list[dict[str, Any]]:
     """Retrieves and parses evidence for all seeded mock recyclers."""
     results = []
     for seed in SEED_RECYCLERS:
-        ev = retrieve_mock_recycler_evidence(seed["slug"], app_instance=app_instance)
+        ev = retrieve_mock_recycler_evidence(
+            seed["slug"],
+            app_instance=app_instance,
+            request_base_url=request_base_url,
+        )
         if "error" not in ev and ev.get("id"):
             results.append(ev)
     return results

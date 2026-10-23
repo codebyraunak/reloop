@@ -140,10 +140,12 @@ class BoundedAgentCoordinator:
         request_id: Optional[str] = None,
         app_instance: Any = None,
         excluded_centres: Optional[set[str]] = None,
+        request_base_url: Optional[str] = None,
     ):
         self.request_id = request_id or ("EW-" + uuid.uuid4().hex[:8].upper())
         self.app_instance = app_instance
         self.excluded_centres = excluded_centres or set()
+        self.request_base_url = request_base_url
         self.trace: list[dict[str, Any]] = []
 
     def _record_step(self, step: int, tool: str, inp: Any, output: Any, evidence: Optional[str] = None, error: Optional[str] = None) -> dict[str, Any]:
@@ -241,7 +243,14 @@ class BoundedAgentCoordinator:
         # STEP 2: Retrieve Permitted Mock Recycler Profiles
         # -------------------------------------------------------------
         source_results = [
-            (seed, retrieve_mock_recycler_evidence(seed["slug"], app_instance=self.app_instance))
+            (
+                seed,
+                retrieve_mock_recycler_evidence(
+                    seed["slug"],
+                    app_instance=self.app_instance,
+                    request_base_url=self.request_base_url,
+                ),
+            )
             for seed in SEED_RECYCLERS
         ]
         retrieved_recyclers = [

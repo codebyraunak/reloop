@@ -535,7 +535,7 @@ def test_boundary_validation_unsupported_item_type():
 def test_unresolved_recycler_source_marks_affected_item_unresolved(monkeypatch):
     original_retrieve = agent_module.retrieve_mock_recycler_evidence
 
-    def retrieve_with_missing_paperback(slug, app_instance=None):
+    def retrieve_with_missing_paperback(slug, app_instance=None, request_base_url=None):
         if slug == "paperback":
             return {
                 "status": "unresolved",
@@ -543,7 +543,11 @@ def test_unresolved_recycler_source_marks_affected_item_unresolved(monkeypatch):
                 "source_url": "http://testserver/mock-recycler/paperback",
                 "retrieved_at": "test-retrieved-at",
             }
-        return original_retrieve(slug, app_instance=app_instance)
+        return original_retrieve(
+            slug,
+            app_instance=app_instance,
+            request_base_url=request_base_url,
+        )
 
     monkeypatch.setattr(agent_module, "retrieve_mock_recycler_evidence", retrieve_with_missing_paperback)
     response = client.post("/api/requests", json={
