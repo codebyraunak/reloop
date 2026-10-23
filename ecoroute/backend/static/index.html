@@ -192,7 +192,7 @@
     .hero-sidecard{position:absolute;right:5%;top:50%;transform:translateY(-50%);z-index:2;width:300px;padding:22px;background:rgba(248,250,245,.96);color:var(--ink);border:1px solid rgba(255,255,255,.65);border-radius:22px;box-shadow:0 20px 50px rgba(0,0,0,.16);backdrop-filter:blur(12px)}
     .sidecard-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
     .sidecard-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:var(--lime);font-size:1.45rem;font-weight:800}
-    .sidecard-eyebrow{font-size:.65rem;letter-spacing:.13em;font-weight:800;color:var(--green);margin-bottom:5px}
+    .hero-sidecard .sidecard-eyebrow{font-size:.65rem;letter-spacing:.13em;font-weight:800;color:var(--green);margin-bottom:5px}
     .hero-sidecard h2{font-size:1.3rem;letter-spacing:-.045em;line-height:1.2;margin-bottom:17px}
     .sidecard-steps{display:grid;gap:13px}
     .sidecard-steps>div{display:flex;gap:10px;align-items:center}
@@ -749,21 +749,6 @@
           <button class="btn form-submit" type="submit">Build my pickup plan <span aria-hidden="true">↗</span></button>
           <div class="form-result" id="formResult" role="status"></div>
           <div id="workflowPanel" class="form-result" style="display:none;background:#f5f8f1;color:var(--ink);border:1px solid var(--line)" aria-live="polite"></div>
-          <div id="demoControls" style="display:none;margin-top:16px;padding:14px;border:1px dashed #9bb99f;border-radius:12px;background:#f6faf2;">
-            <strong>Demo controls</strong>
-            <p class="hint">Synthetic-only changes to a recycler profile for demonstrating drift detection.</p>
-            <label class="field" for="demoScenarioRecycler" style="display:block;margin:10px 0;">
-              Recycler
-              <select id="demoScenarioRecycler" aria-label="Recycler to change"></select>
-            </label>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-light btn-sm" type="button" data-demo-scenario="fee_up">Simulate fee increase</button>
-              <button class="btn btn-light btn-sm" type="button" data-demo-scenario="stops_accepting">Stop accepting a planned item</button>
-              <button class="btn btn-light btn-sm" type="button" data-demo-scenario="pickup_unavailable">Make pickup unavailable</button>
-              <button class="btn btn-light btn-sm" type="button" id="resetDemoScenario">Reset scenario</button>
-            </div>
-            <p id="demoScenarioStatus" class="hint" role="status" aria-live="polite"></p>
-          </div>
           <p class="hint form-footnote">Before booking: centre profiles, fees and booking references shown here are simulated. This page does not dispatch a real-world collection.</p>
         </form>
       </div>
@@ -1323,46 +1308,6 @@
         }
       }
 
-    async function setDemoScenario(scenario) {
-        const select = $('#demoScenarioRecycler');
-        const status = $('#demoScenarioStatus');
-        const slug = select?.value;
-        if (!slug) return;
-        let selectedScenario = scenario;
-        if (scenario === 'stops_accepting') {
-          const recycler = (activeRequest?.plan?.centres || []).find(
-            centre => centre.recycler_id === select.selectedOptions[0]?.dataset.recyclerId
-          );
-          const plannedItem = (activeRequest?.plan?.items || []).find(
-            item => item.suggested_recycler?.recycler_id === recycler?.recycler_id
-          ) || activeRequest?.plan?.items?.[0];
-          if (!plannedItem?.item_type) {
-            showToast('Create a pickup plan first to select an item for this demo scenario.');
-            return;
-          }
-          selectedScenario = `stops_accepting_${plannedItem.item_type}`;
-        }
-        try {
-          const response = await fetch(`${API_BASE}/api/demo/scenario`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ slug, scenario: selectedScenario })
-          });
-          const body = await parseApiResponse(response, 'Could not change demo scenario.');
-          if (!response.ok) throw new Error(apiErrorMessage(body, 'Could not change demo scenario.'));
-          if (status) status.textContent = selectedScenario
-            ? `${slug}: ${selectedScenario} is active for future source reads.`
-            : `${slug}: default profile restored.`;
-        } catch (err) {
-          if (status) status.textContent = err.message || 'Demo scenario could not be changed.';
-        }
-      }
-
-    $$('[data-demo-scenario]').forEach(button => {
-      button.addEventListener('click', () => setDemoScenario(button.dataset.demoScenario));
-    });
-    $('#resetDemoScenario')?.addEventListener('click', () => setDemoScenario(null));
-
     // Structured form submission
     $('#pickupForm').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1548,10 +1493,6 @@
           if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Deterministic planner active';
           if (disclaimerEl) disclaimerEl.textContent = 'Gemini is optional. Matching, fees and approval are handled deterministically; every booking requires human approval.';
         }
-        if (data?.demo_controls_enabled) {
-          const panel = $('#demoControls');
-          if (panel) panel.style.display = 'block';
-        }
       })
       .catch(() => {
         const statusEl = $('#chatStatus');
@@ -1563,20 +1504,13 @@
       .then(recyclers => {
         if (!Array.isArray(recyclers)) return;
         const preferred = $('#preferredCentre');
-        const demoSelect = $('#demoScenarioRecycler');
         const options = recyclers.map(recycler =>
           `<option data-recycler-id="${escapeHTML(recycler.id)}" value="${escapeHTML(recycler.id)}">${escapeHTML(recycler.name)}</option>`
         ).join('');
         if (preferred) preferred.innerHTML = '<option value="">Best match</option>' + options;
-        if (demoSelect) {
-          demoSelect.innerHTML = recyclers.map(recycler =>
-            `<option data-recycler-id="${escapeHTML(recycler.id)}" value="${escapeHTML(recycler.slug || recycler.id)}">${escapeHTML(recycler.name)}</option>`
-          ).join('');
-        }
       })
-      .catch(() => {
-        const status = $('#demoScenarioStatus');
-        if (status) status.textContent = 'Recycler profiles could not be loaded.';
+      .catch(err => {
+        console.error('Could not load recycler profiles.', err);
       });
   </script>
 

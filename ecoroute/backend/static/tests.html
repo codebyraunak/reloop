@@ -272,6 +272,46 @@
       padding: 26px 28px;
       box-shadow: var(--shadow);
     }
+    .scenario-controls {
+      margin-top: 44px;
+    }
+    .scenario-controls h2 {
+      font-size: 1.35rem;
+      margin-bottom: 8px;
+    }
+    .scenario-controls p {
+      color: var(--muted);
+    }
+    .scenario-controls .field {
+      display: block;
+      margin: 14px 0;
+      max-width: 420px;
+    }
+    .scenario-controls select {
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+    }
+    .scenario-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .scenario-notice {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: var(--soft);
+      color: var(--ink) !important;
+      font-size: 0.88rem;
+    }
     .history-card h2 {
       font-size: 1.35rem;
       margin-bottom: 16px;
@@ -400,6 +440,27 @@
       <div class="result-box" id="result-TC5"></div>
     </div>
   </div>
+
+  <section class="history-card scenario-controls" aria-labelledby="advancedDemoHeading">
+    <h2 id="advancedDemoHeading">Advanced demo scenarios</h2>
+    <p>These controls apply synthetic changes to the mock recycler evidence source for drift-detection demonstrations only.</p>
+    <p class="scenario-notice">Synthetic demo only: no real recycler service is changed, and these simulations do not arrange, submit, or dispatch an actual pickup.</p>
+    <label class="field" for="demoScenarioRecycler">
+      Synthetic recycler profile
+      <select id="demoScenarioRecycler" aria-label="Synthetic recycler profile" disabled></select>
+    </label>
+    <label class="field" for="demoScenarioMaterial">
+      Material for the rejection simulation
+      <select id="demoScenarioMaterial" aria-label="Material to reject in the simulation" disabled></select>
+    </label>
+    <div class="scenario-actions">
+      <button class="btn btn-light btn-sm" type="button" data-demo-scenario="fee_up" disabled>Simulate synthetic fee increase</button>
+      <button class="btn btn-light btn-sm" type="button" data-demo-scenario="stops_accepting" disabled>Simulate rejection of selected material</button>
+      <button class="btn btn-light btn-sm" type="button" data-demo-scenario="pickup_unavailable" disabled>Simulate pickup unavailable</button>
+      <button class="btn btn-light btn-sm" type="button" id="resetDemoScenario" disabled>Reset synthetic scenario</button>
+    </div>
+    <p id="demoScenarioStatus" role="status" aria-live="polite" style="margin-top:12px;">Loading synthetic demo controls…</p>
+  </section>
 
   <!-- Run History -->
   <div class="history-card">
@@ -606,7 +667,107 @@
     }
   }
 
+  const demoScenarioButtons = [...document.querySelectorAll('[data-demo-scenario]'), document.getElementById('resetDemoScenario')];
+  let demoControlsAvailable = false;
+  let demoScenarioBusy = false;
+
+  function setDemoControlsDisabled(disabled) {
+    document.getElementById('demoScenarioRecycler').disabled = disabled;
+    document.getElementById('demoScenarioMaterial').disabled = disabled;
+    demoScenarioButtons.forEach(button => { button.disabled = disabled; });
+  }
+
+  async function fetchDemoJson(path, fallback) {
+    const response = await fetch(path);
+    const text = await response.text();
+    let body;
+    try {
+      body = JSON.parse(text);
+    } catch (_) {
+      body = { detail: text || fallback };
+    }
+    if (!response.ok) {
+      throw new Error(typeof body.detail === 'string' ? body.detail : `${fallback} (HTTP ${response.status})`);
+    }
+    return body;
+  }
+
+  async function loadDemoControls() {
+    const status = document.getElementById('demoScenarioStatus');
+    try {
+      const [health, recyclers, materials] = await Promise.all([
+        fetchDemoJson('/api/health', 'Could not check demo-control availability.'),
+        fetchDemoJson('/api/recyclers', 'Could not load synthetic recycler profiles.'),
+        fetchDemoJson('/api/materials', 'Could not load supported materials.')
+      ]);
+      if (!health.demo_controls_enabled) {
+        status.textContent = 'Synthetic demo scenarios are disabled by the backend configuration.';
+        return;
+      }
+      if (!Array.isArray(recyclers) || recyclers.length === 0 || !Array.isArray(materials) || materials.length === 0) {
+        throw new Error('The backend returned no synthetic recycler profiles or supported materials.');
+      }
+      document.getElementById('demoScenarioRecycler').innerHTML = recyclers.map(recycler =>
+        `<option value="${escapeHTML(recycler.slug || recycler.id)}">${escapeHTML(recycler.name)}</option>`
+      ).join('');
+      document.getElementById('demoScenarioMaterial').innerHTML = materials.map(material =>
+        `<option value="${escapeHTML(material.id)}">${escapeHTML(material.label)}</option>`
+      ).join('');
+      demoControlsAvailable = true;
+      setDemoControlsDisabled(false);
+      status.textContent = 'Ready. Changes affect synthetic source reads only; they do not affect real recycler services or arrange actual pickups.';
+    } catch (err) {
+      status.textContent = `Synthetic demo controls could not be loaded: ${err.message || 'Unknown error.'}`;
+    }
+  }
+
+  async function setDemoScenario(scenario) {
+    if (!demoControlsAvailable || demoScenarioBusy) return;
+    const recycler = document.getElementById('demoScenarioRecycler');
+    const material = document.getElementById('demoScenarioMaterial');
+    const status = document.getElementById('demoScenarioStatus');
+    const slug = recycler.value;
+    if (!slug) return;
+    const selectedScenario = scenario === 'stops_accepting'
+      ? `stops_accepting_${material.value}`
+      : scenario;
+    demoScenarioBusy = true;
+    setDemoControlsDisabled(true);
+    status.textContent = 'Applying synthetic scenario…';
+    try {
+      const response = await fetch('/api/demo/scenario', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, scenario: selectedScenario })
+      });
+      const text = await response.text();
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch (_) {
+        body = { detail: text || 'Could not change synthetic demo scenario.' };
+      }
+      if (!response.ok) {
+        throw new Error(typeof body.detail === 'string' ? body.detail : `Could not change synthetic demo scenario (HTTP ${response.status}).`);
+      }
+      status.textContent = selectedScenario
+        ? `${slug}: synthetic scenario "${selectedScenario}" is active for future synthetic source reads only.`
+        : `${slug}: synthetic source profile restored to its default. No real recycler service or pickup was affected.`;
+    } catch (err) {
+      status.textContent = `Synthetic scenario could not be changed: ${err.message || 'Unknown error.'}`;
+    } finally {
+      demoScenarioBusy = false;
+      setDemoControlsDisabled(!demoControlsAvailable);
+    }
+  }
+
+  document.querySelectorAll('[data-demo-scenario]').forEach(button => {
+    button.addEventListener('click', () => setDemoScenario(button.dataset.demoScenario));
+  });
+  document.getElementById('resetDemoScenario').addEventListener('click', () => setDemoScenario(null));
+
   loadHistory();
+  loadDemoControls();
 </script>
 
 </body>
