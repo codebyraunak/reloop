@@ -160,7 +160,7 @@
       .booking-copy{position:static}.form-card{padding:22px}.ai-copy{padding:30px 24px}.chat-panel{padding:22px}
       .footer-top{flex-direction:column}.footer-bottom{flex-direction:column}
     }
-    @media(max-width:420px){.hero h1{font-size:2.55rem}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.steps{grid-template-columns:1fr}.hero-actions .btn{width:100%}}
+    @media(max-width:420px){.hero h1{font-size:2.55rem}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.basket-row{grid-template-columns:1fr!important}.steps{grid-template-columns:1fr}.hero-actions .btn{width:100%}}
 
     /* ReLoop polish pass: keep the existing visual identity, make the experience feel more product-ready. */
     :root{--ink:#19392f;--muted:#66786f;--green:#2d7657;--green-dark:#205941;--lime:#d7f36a;--cream:#f8f9f5;--white:#fff;--line:#e2e9e1;--soft:#edf4e8;--shadow:0 20px 60px rgba(24,53,45,.09);--radius:24px}
@@ -509,10 +509,13 @@
       display: flex; align-items: center; justify-content: center;
       padding: 20px;
       opacity: 0; pointer-events: none;
-      transition: opacity 0.25s ease;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0s linear 0.25s;
     }
     .modal-overlay.open {
       opacity: 1; pointer-events: auto;
+      visibility: visible;
+      transition-delay: 0s;
     }
     .modal-content {
       background: #fff;
@@ -729,11 +732,18 @@
           <div class="form-card-heading"><div><span class="form-step">PICKUP PLANNER · STEP 1</span><h3>Find your recycling option</h3></div><span class="time-pill">About 1 minute</span></div>
           <p class="form-sub">Structured option: the request is sent to ReLoop AI for review, then the backend validates the match and prepares an evidence-backed plan.</p>
           <div class="form-grid">
-            <div class="field full"><label for="itemType">What would you like to recycle? *</label><select id="itemType" name="itemType" required><option value="">Choose item</option><option>Laptops</option><option>Desktop computers</option><option>Mobile phones</option><option>Televisions</option><option>Tablets</option><option>Keyboards and mice</option><option>Printers</option><option>Cables and chargers</option><option>Cameras</option><option>Audio devices</option><option>Mixed e-waste</option></select></div>
-            <div class="field"><label for="quantity">Quantity *</label><input id="quantity" name="quantity" type="number" min="1" max="500" value="1" required><span class="hint">How many items of this type?</span></div>
+            <div class="field full">
+              <fieldset style="width:100%;border:0;">
+                <legend id="basketHeading" style="font-weight:700;margin-bottom:8px;">Items to recycle *</legend>
+                <div id="basketRows" aria-labelledby="basketHeading"></div>
+                <button class="btn btn-light btn-sm" type="button" id="addBasketItem">+ Add another item</button>
+                <span id="basketHint" class="hint">Up to 10 types; repeated types merge into one row.</span>
+              </fieldset>
+            </div>
             <div class="field"><label for="city">Pickup city *</label><input id="city" name="city" placeholder="e.g. Mysuru" required autocomplete="address-level2"></div>
             <div class="field"><label for="pincode">PIN code *</label><input id="pincode" name="pincode" inputmode="numeric" pattern="[1-9][0-9]{5}" maxlength="6" placeholder="570001" required autocomplete="postal-code"></div>
             <div class="field full"><label for="maxFee">Maximum pickup fee <span class="label-optional">(₹) *</span></label><input id="maxFee" name="maxFee" type="number" min="0" max="100000" value="100" required><span class="hint">We'll flag any matching option above this amount.</span></div>
+            <div class="field full"><label for="preferredCentre">Preferred centre <span class="label-optional">(optional)</span></label><select id="preferredCentre" name="preferredCentre"><option value="">Best match</option></select><span class="hint">When selected, only this centre is evaluated.</span></div>
           </div>
           <div class="form-assurance"><span>⌑</span><p><strong>Privacy note</strong><br>Only item type, quantity, city, PIN code and fee limit are sent for matching. No contact details are requested by this form.</p></div>
           <button class="btn form-submit" type="submit">Build my pickup plan <span aria-hidden="true">↗</span></button>
@@ -812,7 +822,7 @@
   <div class="toast" id="toast" role="status"></div>
 
   <!-- Styled Human Approval Modal -->
-  <div class="modal-overlay" id="approvalModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal-overlay" id="approvalModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="modalTitle">
     <div class="modal-content">
       <button class="modal-close" id="modalCloseBtn" aria-label="Close modal">✕</button>
       <div class="kicker" style="color:var(--green)">HUMAN APPROVAL GATEWAY</div>
@@ -835,12 +845,10 @@
 
     // Clicking an item card preselects it in the pickup form.
     function selectItemCard(card) {
-      const select = $('#itemType');
-      const item = card.dataset.item;
-      const option = [...select.options].find(o => o.text === item);
-      if (option) select.value = option.value;
+      const itemType = materialApiId(card.dataset.item);
+      if (itemType) addItemToBasket(itemType);
       $('#booking').scrollIntoView({behavior:'smooth'});
-      showToast(item + ' selected. Add your location and fee limit to continue.');
+      showToast(`${card.dataset.item} added to the pickup basket.`);
     }
     $$('.item-card').forEach(card => {
       card.addEventListener('click', () => selectItemCard(card));
@@ -869,6 +877,9 @@
     let activeRequestId = null;
     let activeRequest = null;
     let activeAgentInfo = null;
+    let basketItems = [{ rowId: 1, item_type: '', quantity: 1 }];
+    let nextBasketRowId = 2;
+    const MAX_BASKET_ITEMS = 10;
 
     async function parseApiResponse(response, fallbackMsg) {
       const text = await response.text();
@@ -897,6 +908,93 @@
       };
       return map[label] || null;
     }
+
+    function renderBasketRows() {
+      const container = $('#basketRows');
+      if (!container) return;
+      container.innerHTML = basketItems.map((row, index) => {
+        const itemId = `basket-item-${row.rowId}`;
+        const quantityId = `basket-quantity-${row.rowId}`;
+        const options = Object.entries(materialLabels).map(([id, label]) =>
+          `<option value="${escapeHTML(id)}" ${row.item_type === id ? 'selected' : ''}>${escapeHTML(label)}</option>`
+        ).join('');
+        return `
+          <div class="basket-row" style="display:grid;grid-template-columns:minmax(0,2fr) minmax(90px,1fr) auto;gap:10px;align-items:end;margin-bottom:10px;">
+            <div class="field"><label for="${itemId}">Item ${index + 1} *</label><select id="${itemId}" data-basket-item="${row.rowId}" required><option value="">Choose item</option>${options}</select></div>
+            <div class="field"><label for="${quantityId}">Quantity *</label><input id="${quantityId}" data-basket-quantity="${row.rowId}" type="number" min="1" max="500" value="${escapeHTML(row.quantity)}" required></div>
+            <button class="btn btn-light btn-sm" type="button" data-remove-basket-row="${row.rowId}" aria-label="Remove item ${index + 1}" ${basketItems.length === 1 ? 'disabled' : ''}>Remove</button>
+          </div>
+        `;
+      }).join('');
+
+      container.querySelectorAll('[data-basket-item]').forEach(select => {
+        select.addEventListener('change', () => {
+          const row = basketItems.find(item => item.rowId === Number(select.dataset.basketItem));
+          if (!row) return;
+          const duplicate = basketItems.find(
+            item => item.rowId !== row.rowId && item.item_type && item.item_type === select.value
+          );
+          if (duplicate) {
+            const mergedQuantity = Number(duplicate.quantity) + Number(row.quantity);
+            if (mergedQuantity > 500) {
+              select.value = row.item_type;
+              showToast('Merged quantity would exceed the 500-unit limit.');
+              return;
+            }
+            duplicate.quantity = mergedQuantity;
+            basketItems = basketItems.filter(item => item.rowId !== row.rowId);
+            showToast('Duplicate item type merged into its existing basket row.');
+          } else {
+            row.item_type = select.value;
+          }
+          renderBasketRows();
+        });
+      });
+      container.querySelectorAll('[data-basket-quantity]').forEach(input => {
+        input.addEventListener('input', () => {
+          const row = basketItems.find(item => item.rowId === Number(input.dataset.basketQuantity));
+          if (row) row.quantity = Number(input.value);
+        });
+      });
+      container.querySelectorAll('[data-remove-basket-row]').forEach(button => {
+        button.addEventListener('click', () => {
+          if (basketItems.length <= 1) return;
+          basketItems = basketItems.filter(item => item.rowId !== Number(button.dataset.removeBasketRow));
+          renderBasketRows();
+        });
+      });
+      $('#addBasketItem').disabled = basketItems.length >= MAX_BASKET_ITEMS;
+    }
+
+    function addItemToBasket(itemType, quantity = 1) {
+      const existing = basketItems.find(item => item.item_type === itemType);
+      if (existing) {
+        if (Number(existing.quantity) + Number(quantity) > 500) {
+          showToast('Each item type is limited to 500 units.');
+          return;
+        }
+        existing.quantity = Number(existing.quantity) + Number(quantity);
+      } else {
+        const emptyRow = basketItems.find(item => !item.item_type);
+        if (emptyRow) {
+          emptyRow.item_type = itemType;
+          emptyRow.quantity = quantity;
+        } else if (basketItems.length < MAX_BASKET_ITEMS) {
+          basketItems.push({ rowId: nextBasketRowId++, item_type: itemType, quantity });
+        } else {
+          showToast('The basket can contain at most 10 item types.');
+          return;
+        }
+      }
+      renderBasketRows();
+    }
+
+    $('#addBasketItem').addEventListener('click', () => {
+      if (basketItems.length >= MAX_BASKET_ITEMS) return;
+      basketItems.push({ rowId: nextBasketRowId++, item_type: '', quantity: 1 });
+      renderBasketRows();
+      $(`#basket-item-${basketItems[basketItems.length - 1].rowId}`).focus();
+    });
 
     function safeSourceUrl(rawUrl) {
       try {
@@ -1124,6 +1222,7 @@
       `;
 
       modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
       const confirmButton = $('#modalConfirmBtn');
       confirmButton.disabled = partialItems.length > 0;
       $('#acknowledgePartial')?.addEventListener('change', event => {
@@ -1132,14 +1231,17 @@
 
       $('#modalConfirmBtn').onclick = async () => {
         modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
         await executeApproval(true, feeException, partialItems.length > 0 && $('#acknowledgePartial').checked);
       };
       $('#modalCancelBtn').onclick = () => {
         modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
         showToast('Plan kept in draft state. No booking submitted.');
       };
       $('#modalCloseBtn').onclick = () => {
         modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
       };
     }
 
@@ -1198,8 +1300,9 @@
       } catch (err) {
         showToast(err.message || 'Verification could not be completed.');
       }
+    }
 
-      async function replanRequest() {
+    async function replanRequest() {
         if (!activeRequestId) return;
         try {
           const response = await fetch(`${API_BASE}/api/requests/${activeRequestId}/replan`, { method: 'POST' });
@@ -1212,7 +1315,7 @@
         }
       }
 
-      async function setDemoScenario(scenario) {
+    async function setDemoScenario(scenario) {
         const select = $('#demoScenarioRecycler');
         const status = $('#demoScenarioStatus');
         const slug = select?.value;
@@ -1247,11 +1350,10 @@
         }
       }
 
-      $$('[data-demo-scenario]').forEach(button => {
-        button.addEventListener('click', () => setDemoScenario(button.dataset.demoScenario));
-      });
-      $('#resetDemoScenario')?.addEventListener('click', () => setDemoScenario(null));
-    }
+    $$('[data-demo-scenario]').forEach(button => {
+      button.addEventListener('click', () => setDemoScenario(button.dataset.demoScenario));
+    });
+    $('#resetDemoScenario')?.addEventListener('click', () => setDemoScenario(null));
 
     // Structured form submission
     $('#pickupForm').addEventListener('submit', async (event) => {
@@ -1259,19 +1361,27 @@
       const form = event.currentTarget;
       if (!form.reportValidity()) return;
       const data = new FormData(form);
-      const itemLabel = String(data.get('itemType') || '');
-      const itemType = materialApiId(itemLabel);
       const result = $('#formResult');
-
-      if (!itemType) {
+      if (!basketItems.length || basketItems.some(item => !item.item_type)) {
         result.style.display = 'block';
-        result.textContent = 'This item type is not supported by the demo matching service yet.';
+        result.textContent = 'Choose an item type for every basket row.';
+        return;
+      }
+      const mergedItems = [];
+      for (const item of basketItems) {
+        const existing = mergedItems.find(row => row.item_type === item.item_type);
+        if (existing) existing.quantity += Number(item.quantity);
+        else mergedItems.push({ item_type: item.item_type, quantity: Number(item.quantity) });
+      }
+      if (mergedItems.length > MAX_BASKET_ITEMS || mergedItems.some(item => item.quantity < 1 || item.quantity > 500)) {
+        result.style.display = 'block';
+        result.textContent = 'Use at most 10 item types and no more than 500 units per type.';
         return;
       }
       const city = String(data.get('city') || '').trim();
       const pincode = String(data.get('pincode') || '').trim();
-      const quantity = Number(data.get('quantity'));
       const maxFee = Number(data.get('maxFee'));
+      const preferredCentre = String(data.get('preferredCentre') || '');
 
       result.style.display = 'block';
       result.textContent = 'ReLoop AI agent is gathering recycler evidence and comparing rules…';
@@ -1280,7 +1390,13 @@
         const response = await fetch(`${API_BASE}/api/requests`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ item_type: itemType, quantity, city, pincode, max_fee: maxFee })
+          body: JSON.stringify({
+            items: mergedItems,
+            city,
+            pincode,
+            max_fee: maxFee,
+            preferred_centre: preferredCentre || null,
+          })
         });
         const body = await parseApiResponse(response, 'Could not create pickup plan.');
         if (!response.ok) throw new Error(apiErrorMessage(body, 'Pickup plan creation failed.'));
@@ -1303,6 +1419,7 @@
       television:'Televisions', tablet:'Tablets', keyboard_mouse:'Keyboards and mice',
       printer:'Printers', cable_charger:'Cables and chargers', camera:'Cameras', audio_device:'Audio devices', mixed_ewaste:'Mixed e-waste'
     };
+    renderBasketRows();
 
     function addBubble(text, who) {
       const bubble = document.createElement('div');
@@ -1314,7 +1431,16 @@
     }
 
     function addPlannerAction(body) {
-      if (!body || !body.item_type || !Object.prototype.hasOwnProperty.call(materialLabels, String(body.item_type).toLowerCase())) return;
+      if (!body) return;
+      const items = Array.isArray(body.items) && body.items.length
+        ? body.items
+        : body.item_type
+          ? [{ item_type: body.item_type, quantity: body.quantity || 1 }]
+          : [];
+      const validItems = items.filter(item =>
+        Object.prototype.hasOwnProperty.call(materialLabels, String(item.item_type).toLowerCase())
+      );
+      if (!validItems.length) return;
       const actions = document.createElement('div');
       actions.className = 'assistant-actions';
       const button = document.createElement('button');
@@ -1322,11 +1448,22 @@
       button.className = 'assistant-action-btn';
       button.textContent = 'Use these details in pickup planner ↗';
       button.addEventListener('click', () => {
-        const select = $('#itemType');
-        const label = materialLabels[String(body.item_type).toLowerCase()] || body.item_type;
-        const opt = [...select.options].find(o => o.text.toLowerCase() === String(label).toLowerCase());
-        if (opt) select.value = opt.value;
-        if (body.quantity && $('#quantity')) $('#quantity').value = body.quantity;
+        const consolidated = [];
+        validItems.forEach(item => {
+          const itemType = String(item.item_type).toLowerCase();
+          const existing = consolidated.find(row => row.item_type === itemType);
+          if (existing) existing.quantity += Number(item.quantity) || 1;
+          else consolidated.push({ item_type: itemType, quantity: Number(item.quantity) || 1 });
+        });
+        basketItems = consolidated.slice(0, MAX_BASKET_ITEMS).map(item => ({
+          rowId: nextBasketRowId++,
+          item_type: item.item_type,
+          quantity: Math.min(item.quantity, 500),
+        }));
+        if (consolidated.length > MAX_BASKET_ITEMS || consolidated.some(item => item.quantity > 500)) {
+          showToast('Some assistant details exceed basket limits; review the basket before submitting.');
+        }
+        renderBasketRows();
         if (body.max_fee !== undefined && body.max_fee !== null && $('#maxFee')) $('#maxFee').value = body.max_fee;
         if (body.city && $('#city')) $('#city').value = body.city;
         if (body.pincode && $('#pincode')) $('#pincode').value = body.pincode;
@@ -1404,24 +1541,32 @@
         if (data?.demo_controls_enabled) {
           const panel = $('#demoControls');
           if (panel) panel.style.display = 'block';
-          fetch(`${API_BASE}/api/recyclers`, { signal: AbortSignal.timeout(6000) })
-            .then(r => parseApiResponse(r, 'Could not load recycler profiles.'))
-            .then(recyclers => {
-              const select = $('#demoScenarioRecycler');
-              if (!select || !Array.isArray(recyclers)) return;
-              select.innerHTML = recyclers.map(recycler =>
-                `<option data-recycler-id="${escapeHTML(recycler.id)}" value="${escapeHTML(recycler.slug || recycler.id)}">${escapeHTML(recycler.name)}</option>`
-              ).join('');
-            })
-            .catch(() => {
-              const status = $('#demoScenarioStatus');
-              if (status) status.textContent = 'Recycler profiles could not be loaded for demo controls.';
-            });
         }
       })
       .catch(() => {
         const statusEl = $('#chatStatus');
         if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Service Status Offline';
+      });
+
+    fetch(`${API_BASE}/api/recyclers`, { signal: AbortSignal.timeout(6000) })
+      .then(r => parseApiResponse(r, 'Could not load recycler profiles.'))
+      .then(recyclers => {
+        if (!Array.isArray(recyclers)) return;
+        const preferred = $('#preferredCentre');
+        const demoSelect = $('#demoScenarioRecycler');
+        const options = recyclers.map(recycler =>
+          `<option data-recycler-id="${escapeHTML(recycler.id)}" value="${escapeHTML(recycler.id)}">${escapeHTML(recycler.name)}</option>`
+        ).join('');
+        if (preferred) preferred.innerHTML = '<option value="">Best match</option>' + options;
+        if (demoSelect) {
+          demoSelect.innerHTML = recyclers.map(recycler =>
+            `<option data-recycler-id="${escapeHTML(recycler.id)}" value="${escapeHTML(recycler.slug || recycler.id)}">${escapeHTML(recycler.name)}</option>`
+          ).join('');
+        }
+      })
+      .catch(() => {
+        const status = $('#demoScenarioStatus');
+        if (status) status.textContent = 'Recycler profiles could not be loaded.';
       });
   </script>
 

@@ -263,6 +263,7 @@ class BoundedAgentCoordinator:
                 "recycler_id": result.get("recycler_id", seed["id"]),
                 "name": result.get("name", seed["name"]),
                 "area": seed["area"],
+                "slug": seed["slug"],
             }
             for seed, result in source_results
             if result.get("status") == "unresolved"
@@ -328,6 +329,8 @@ class BoundedAgentCoordinator:
                         "",
                     ),
                 }
+                if not preferred_match:
+                    continue
 
                 if m_type in r["accepted_materials"]:
                     evidence = {
@@ -376,6 +379,12 @@ class BoundedAgentCoordinator:
                     })
 
             for source in unresolved_sources:
+                if preferred_centre and preferred_centre not in {
+                    source.get("recycler_id"),
+                    source.get("name"),
+                    source.get("slug"),
+                }:
+                    continue
                 source_area = source["area"]
                 if source_area and not (
                     clean_city.lower() in source_area.lower()

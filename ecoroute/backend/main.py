@@ -120,7 +120,7 @@ class ItemInput(BaseModel):
 class RequestCreate(BaseModel):
     item_type: Optional[str] = Field(default=None, description="Single material ID if submitting one item type")
     quantity: Optional[int] = Field(default=None, strict=True, ge=1, le=500, description="Quantity for single item request")
-    items: Optional[list[ItemInput]] = Field(default=None, description="Multiple items in one pickup request")
+    items: Optional[list[ItemInput]] = Field(default=None, max_length=10, description="Multiple items in one pickup request")
     city: str = Field(..., min_length=1, max_length=100)
     pincode: str = Field(..., pattern=r"^[1-9][0-9]{5}$")
     max_fee: float = Field(..., ge=0.0, le=100000.0, description="User fee budget limit (cannot be negative)")
@@ -688,6 +688,22 @@ def create_request(payload: RequestCreate, request: Request) -> dict[str, Any]:
         items_to_save.append({"item_type": payload.item_type, "quantity": qty})
     else:
         raise HTTPException(status_code=422, detail="At least one item must be provided.")
+
+    merged_items: dict[str, int] = {}
+    for item in items_to_save:
+        merged_items[item["item_type"]] = merged_items.get(item["item_type"], 0) + item["quantity"]
+        if merged_items[item["item_type"]] > 500:
+            raise HTTPException(status_code=422, detail=f"Combined quantity for '{item['item_type']}' cannot exceed 500.")
+    items_to_save = [
+        {"item_type": item_type, "quantity": quantity}
+        for item_type, quantity in merged_items.items()
+    ]
+
+    if payload.preferred_centre and not any(
+        payload.preferred_centre in {seed["id"], seed["slug"], seed["name"]}
+        for seed in SEED_RECYCLERS
+    ):
+        raise HTTPException(status_code=422, detail="Preferred centre is not a known recycler.")
 
     # Location is validated as two independent fields by RequestCreate.
     city = payload.city

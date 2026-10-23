@@ -1197,6 +1197,11 @@ def test_partial_plan_needs_explicit_acknowledgement():
     assert request["status"] == "awaiting_approval"
     assert [item["decision"] for item in request["plan"]["items"]] == ["accepted", "rejected"]
     assert [centre["recycler_id"] for centre in request["plan"]["centres"]] == ["mock-recycler-a"]
+    assert {
+        row["recycler_id"]
+        for item in request["plan"]["items"]
+        for row in item["recycler_evidence"]
+    } == {"mock-recycler-a"}
 
     rejected = client.post(
         f"/api/requests/{request['id']}/approval",
@@ -1210,3 +1215,18 @@ def test_partial_plan_needs_explicit_acknowledgement():
     )
     assert approved.status_code == 200
     assert approved.json()["status"] == "approved"
+
+
+def test_duplicate_basket_items_are_merged_at_the_api_boundary():
+    response = client.post("/api/requests", json={
+        "items": [
+            {"item_type": "laptop", "quantity": 1},
+            {"item_type": "laptop", "quantity": 2},
+        ],
+        "city": "Mysuru",
+        "pincode": "570001",
+        "max_fee": 100,
+    })
+    assert response.status_code == 200
+    assert response.json()["items"] == [{"item_type": "laptop", "quantity": 3}]
+    assert response.json()["plan"]["items"][0]["quantity"] == 3
