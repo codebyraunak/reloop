@@ -691,7 +691,7 @@
           <div class="ai-copy">
             <div class="kicker">AI-first pickup coordinator</div>
             <h2>Tell ReLoop what you need. Let the agent do the legwork.</h2>
-            <p>Tell ReLoop what you want to recycle. The assistant gathers missing details, invokes backend tools to inspect the mock recycler records, compares the fee with your limit and guides you to a pickup plan. Approval is still yours.</p>
+            <p>Tell ReLoop what you want to recycle. The assistant can explain the process and extract details from your message. The pickup planner then checks mock recycler evidence and fees; approval is still yours.</p>
             <div class="ai-bullets">
               <span>Understands item types, quantities and location</span>
               <span>Helps compare suitable recycling options</span>
@@ -1097,17 +1097,25 @@
 
       // Build Live Agent Trace Panel
       const traces = request.agent_traces || plan.agent_trace || [];
+      const agentMode = plan.agent_mode || 'deterministic';
+      const agentModeLabels = {
+        gemini: 'Gemini selected all pipeline tools; decisions stayed deterministic',
+        gemini_partial: 'Gemini selected some tools; backend completed the remaining steps',
+        deterministic: 'Deterministic backend pipeline'
+      };
+      const agentModeLabel = `${agentModeLabels[agentMode] || agentModeLabels.deterministic}${plan.agent_exception ? ` · fallback: ${plan.agent_exception}` : ''}`;
       let traceHtml = '';
       if (traces.length > 0) {
         traceHtml = `
           <div class="trace-panel">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
               <strong style="font-size:0.9rem;">Live Agent Execution Trace (${traces.length} steps)</strong>
-              <span style="font-size:0.75rem;color:var(--muted);">Deterministic Bounded Loop</span>
+              <span style="font-size:0.75rem;color:var(--muted);">${escapeHTML(agentModeLabel)}</span>
             </div>
+            ${plan.agent_explanation ? `<p class="trace-meta">${escapeHTML(plan.agent_explanation)}</p>` : ''}
             ${traces.map(t => `
               <div class="trace-step ${t.error ? 'error' : ''}">
-                <div><strong>Step ${escapeHTML(t.step)}:</strong> <code>${escapeHTML(t.tool)}</code></div>
+                <div><strong>Step ${escapeHTML(t.step)}:</strong> <code>${escapeHTML(t.tool)}</code> <span class="trace-meta">(${escapeHTML(t.actor || 'backend')})</span></div>
                 <div style="margin-top:3px;font-size:0.8rem;">${escapeHTML(t.evidence || t.error || JSON.stringify(t.output))}</div>
                 <div class="trace-meta">Timestamp: ${escapeHTML(t.timestamp)}</div>
               </div>
@@ -1493,13 +1501,11 @@
         const statusEl = $('#chatStatus');
         const disclaimerEl = $('#chatDisclaimer');
         if (body.ai_powered) {
-          if (statusEl) statusEl.innerHTML = '<span class="online-dot"></span>Gemini AI Active';
-          if (disclaimerEl) disclaimerEl.textContent = body.tool_called
-            ? `Backend tool invoked: ${body.tool_called}. Review details before creating a pickup plan.`
-            : 'Gemini replied. The pickup planner validates materials and fees separately.';
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot"></span>Gemini chat · deterministic planner';
+          if (disclaimerEl) disclaimerEl.textContent = 'Gemini replied to your message. Intent extraction, recycler matching, fees and approval are handled separately by the pickup planner.';
         } else if (body.fallback_used) {
-          if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Rule-based Fallback';
-          if (disclaimerEl) disclaimerEl.textContent = 'Deterministic fallback mode active. ReLoop enforces all matching rules deterministically.';
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Deterministic assistant fallback';
+          if (disclaimerEl) disclaimerEl.textContent = 'The chat response and intent extraction are deterministic. The pickup planner checks recycler evidence and still requires human approval.';
         }
         addBubble(body.reply || 'Request understood. No booking has been made yet.', 'bot');
         addPlannerAction(body);
@@ -1531,12 +1537,15 @@
         if (!data || data.status !== 'ok') throw new Error('Backend is not healthy.');
         const statusEl = $('#chatStatus');
         const disclaimerEl = $('#chatDisclaimer');
-        if (data && data.gemini_configured) {
-          if (statusEl) statusEl.innerHTML = '<span class="online-dot"></span>Gemini AI Active';
-          if (disclaimerEl) disclaimerEl.textContent = 'Gemini AI is configured on the server. Send a message to get started.';
+        if (data && data.agent_orchestration_enabled) {
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot"></span>Gemini orchestration available';
+          if (disclaimerEl) disclaimerEl.textContent = 'Optional Gemini selects backend pipeline tools and quotes their results. Acceptance, fees and approval remain deterministic.';
+        } else if (data && data.gemini_configured) {
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Gemini disabled in test mode';
+          if (disclaimerEl) disclaimerEl.textContent = 'The deterministic planner is active. TEST_MODE disables Gemini calls.';
         } else {
-          if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Rule-based Fallback Active';
-          if (disclaimerEl) disclaimerEl.textContent = 'Deterministic fallback mode active. Human approval is strictly required before any booking.';
+          if (statusEl) statusEl.innerHTML = '<span class="online-dot" style="background:#b45309"></span>Deterministic planner active';
+          if (disclaimerEl) disclaimerEl.textContent = 'Gemini is optional. Matching, fees and approval are handled deterministically; every booking requires human approval.';
         }
         if (data?.demo_controls_enabled) {
           const panel = $('#demoControls');

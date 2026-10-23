@@ -239,6 +239,7 @@ def run_migrations() -> None:
                     request_id TEXT,
                     step INTEGER NOT NULL,
                     tool TEXT NOT NULL,
+                    actor TEXT NOT NULL DEFAULT 'backend',
                     input_json TEXT NOT NULL,
                     output_json TEXT NOT NULL,
                     evidence_json TEXT,
@@ -316,6 +317,7 @@ def run_migrations() -> None:
                     request_id TEXT,
                     step INTEGER NOT NULL,
                     tool TEXT NOT NULL,
+                    actor TEXT NOT NULL DEFAULT 'backend',
                     input_json TEXT NOT NULL,
                     output_json TEXT NOT NULL,
                     evidence_json TEXT,
@@ -361,6 +363,7 @@ def run_migrations() -> None:
         _add_column_if_missing(conn, "bookings", "drift_json", "TEXT")
         _add_column_if_missing(conn, "bookings", "snapshot_hash", "TEXT")
         _add_column_if_missing(conn, "test_runs", "explanation", "TEXT")
+        _add_column_if_missing(conn, "agent_traces", "actor", "TEXT NOT NULL DEFAULT 'backend'")
 
         # Normalize legacy statuses to lowercase standard lifecycle
         # draft -> awaiting_approval -> approved -> requested -> verified

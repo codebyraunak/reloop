@@ -8,13 +8,13 @@ import uuid
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Generator, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from db import db_connection, now_iso
+from db import TEST_MODE, db_connection, now_iso
 from mock_recyclers import (
     MATERIAL_LABELS,
     SEED_RECYCLERS,
@@ -147,11 +147,21 @@ class BoundedAgentCoordinator:
         self.excluded_centres = excluded_centres or set()
         self.request_base_url = request_base_url
         self.trace: list[dict[str, Any]] = []
+        self._active_actor = "backend"
+        self._pipeline_generator: Optional[Generator[tuple[str, dict[str, Any]], None, dict[str, Any]]] = None
+        self._pipeline_results: dict[str, dict[str, Any]] = {}
+        self._pipeline_stage_index = 0
+        self._pipeline_result: Optional[dict[str, Any]] = None
+        self._pipeline_inputs: dict[str, Any] = {}
+        self._gemini_explanation: Optional[str] = None
+        self._agent_mode = "deterministic"
+        self._agent_exception: Optional[str] = None
 
     def _record_step(self, step: int, tool: str, inp: Any, output: Any, evidence: Optional[str] = None, error: Optional[str] = None) -> dict[str, Any]:
         entry = {
             "step": step,
             "tool": tool,
+            "actor": self._active_actor,
             "input": inp,
             "output": output,
             "evidence": evidence,
@@ -163,14 +173,15 @@ class BoundedAgentCoordinator:
             with db_connection() as conn:
                 conn.execute(
                     """
-                    INSERT INTO agent_traces(id, request_id, step, tool, input_json, output_json, evidence_json, error_json, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO agent_traces(id, request_id, step, tool, actor, input_json, output_json, evidence_json, error_json, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         f"{self.request_id}-step-{step}",
                         self.request_id,
                         step,
                         tool,
+                        self._active_actor,
                         json.dumps(inp),
                         json.dumps(output),
                         json.dumps(evidence) if evidence else None,
@@ -182,14 +193,14 @@ class BoundedAgentCoordinator:
             logger.warning("Could not persist agent trace: %s", exc)
         return entry
 
-    def run_agent_workflow(
+    def _workflow_steps(
         self,
         items: list[dict[str, Any]],
         city: str,
         pincode: str,
         max_fee: float,
         preferred_centre: Optional[str] = None,
-    ) -> dict[str, Any]:
+    ) -> Generator[tuple[str, dict[str, Any]], None, dict[str, Any]]:
         """Executes the full 6-step bounded agent workflow with traceable evidence."""
         # -------------------------------------------------------------
         # STEP 1: Gather and Validate Pickup Details
@@ -229,6 +240,7 @@ class BoundedAgentCoordinator:
             evidence=f"Validated {len(items)} item(s) for {clean_city} ({clean_pin}) with fee limit ₹{max_fee}.",
             error=val_errors[0] if val_errors else None,
         )
+        yield "validate_details", step1_out
 
         if not step1_out["valid"]:
             return {
@@ -296,6 +308,7 @@ class BoundedAgentCoordinator:
             ),
             error="; ".join(source.get("error", "Source unresolved") for source in unresolved_sources) or None,
         )
+        yield "fetch_recycler_profiles", step2_out
 
         # -------------------------------------------------------------
         # STEP 3: Compare Item Acceptance and Rejection Rules
@@ -426,6 +439,7 @@ class BoundedAgentCoordinator:
             output=step3_out,
             evidence=f"Evaluated material rules across mock centres. Accepted items: {[e['item_type'] for e in per_item_evaluations if e['is_accepted']]}.",
         )
+        yield "match_items", step3_out
 
         # -------------------------------------------------------------
         # STEP 4: Compare Pickup Fees with User's Limit
@@ -480,6 +494,7 @@ class BoundedAgentCoordinator:
             output=step4_out,
             evidence=f"Proposed fee ₹{best_fee} vs budget ₹{max_fee}. Fee exception required: {fee_exception_required}.",
         )
+        yield "compare_fees", step4_out
 
         # -------------------------------------------------------------
         # STEP 5: Prepare Pickup Plan with Traceable Evidence
@@ -574,6 +589,7 @@ class BoundedAgentCoordinator:
             output={"status": plan_status, "total_fee": best_fee},
             evidence=f"Plan synthesized with status '{plan_status}'. Requires human approval: True.",
         )
+        yield "draft_plan", {"status": plan_status, "total_fee": best_fee, "items": per_item_decisions}
 
         # -------------------------------------------------------------
         # STEP 6: Verify Evidence Completeness
@@ -596,6 +612,7 @@ class BoundedAgentCoordinator:
             output={"complete": evidence_complete, "final_status": plan["status"]},
             evidence=f"Evidence verification completed with outcome: {'complete' if evidence_complete else 'unresolved'}.",
         )
+        yield "verify_evidence", {"complete": evidence_complete, "final_status": plan["status"]}
 
         return {
             "request_id": self.request_id,
@@ -604,3 +621,321 @@ class BoundedAgentCoordinator:
             "plan": plan,
             "agent_trace": self.trace,
         }
+
+    _PIPELINE_STAGES = (
+        "validate_details",
+        "fetch_recycler_profiles",
+        "match_items",
+        "compare_fees",
+        "draft_plan",
+        "verify_evidence",
+    )
+    _GEMINI_TOOLS = {
+        "validate_details": "validate_details",
+        "fetch_recycler_profiles": "fetch_recycler_profiles",
+        "match_items": "match_items",
+        "compare_fees": "compare_fees",
+        "draft_plan": "draft_plan",
+    }
+
+    def _begin_pipeline(
+        self,
+        items: list[dict[str, Any]],
+        city: str,
+        pincode: str,
+        max_fee: float,
+        preferred_centre: Optional[str],
+    ) -> None:
+        self.trace = []
+        self._pipeline_results = {}
+        self._pipeline_stage_index = 0
+        self._pipeline_result = None
+        self._gemini_explanation = None
+        self._agent_mode = "deterministic"
+        self._agent_exception = None
+        self._pipeline_inputs = {
+            "items": items,
+            "city": city,
+            "pincode": pincode,
+            "max_fee": max_fee,
+            "preferred_centre": preferred_centre,
+        }
+        self._pipeline_generator = self._workflow_steps(
+            items=items,
+            city=city,
+            pincode=pincode,
+            max_fee=max_fee,
+            preferred_centre=preferred_centre,
+        )
+
+    def _advance_to(self, target: str, actor: str) -> dict[str, Any]:
+        while target not in self._pipeline_results and self._pipeline_result is None:
+            if self._pipeline_generator is None or self._pipeline_stage_index >= len(self._PIPELINE_STAGES):
+                break
+            expected_stage = self._PIPELINE_STAGES[self._pipeline_stage_index]
+            self._active_actor = actor if expected_stage == target else "backend"
+            try:
+                stage, output = next(self._pipeline_generator)
+            except StopIteration as completed:
+                self._pipeline_result = completed.value
+                break
+            if stage != expected_stage:
+                raise RuntimeError(f"Agent stage order mismatch: expected {expected_stage}, received {stage}.")
+            self._pipeline_results[stage] = output
+            self._pipeline_stage_index += 1
+            self._active_actor = "backend"
+            if stage == target:
+                break
+
+        if target in self._pipeline_results:
+            return self._pipeline_results[target]
+        return {"completed": False, "reason": "The requested stage could not run after pipeline validation."}
+
+    def _run_remaining_stages(self) -> None:
+        if self._pipeline_generator is None:
+            return
+        while self._pipeline_result is None and self._pipeline_stage_index < len(self._PIPELINE_STAGES):
+            expected_stage = self._PIPELINE_STAGES[self._pipeline_stage_index]
+            self._active_actor = "backend"
+            try:
+                stage, output = next(self._pipeline_generator)
+            except StopIteration as completed:
+                self._pipeline_result = completed.value
+                break
+            if stage != expected_stage:
+                raise RuntimeError(f"Agent stage order mismatch: expected {expected_stage}, received {stage}.")
+            self._pipeline_results[stage] = output
+            self._pipeline_stage_index += 1
+
+        if self._pipeline_result is None and self._pipeline_generator is not None:
+            self._active_actor = "backend"
+            try:
+                next(self._pipeline_generator)
+            except StopIteration as completed:
+                self._pipeline_result = completed.value
+
+    @staticmethod
+    def _value(value: Any, key: str, default: Any = None) -> Any:
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+
+    @classmethod
+    def _response_content_and_calls(cls, response: Any) -> tuple[Any, list[Any]]:
+        candidates = cls._value(response, "candidates", []) or []
+        candidate = candidates[0] if candidates else None
+        content = cls._value(candidate, "content")
+        if content is None:
+            content = cls._value(response, "content")
+        parts = cls._value(content, "parts", []) or []
+        calls = [
+            cls._value(part, "function_call")
+            for part in parts
+            if cls._value(part, "function_call") is not None
+        ]
+        if not calls:
+            calls = cls._value(response, "function_calls", []) or []
+        return content, calls
+
+    @staticmethod
+    def _retryable_status(exc: Exception) -> Optional[int]:
+        candidates = (
+            getattr(exc, "status_code", None),
+            getattr(exc, "code", None),
+            getattr(getattr(exc, "response", None), "status_code", None),
+        )
+        for candidate in candidates:
+            try:
+                status = int(candidate)
+            except (TypeError, ValueError):
+                continue
+            if status == 429 or status >= 500:
+                return status
+        return None
+
+    def _generate_with_retry(self, client: Any, contents: list[Any], config: dict[str, Any]) -> Any:
+        for attempt in range(2):
+            try:
+                return client.models.generate_content(
+                    model=os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip(),
+                    contents=contents,
+                    config=config,
+                )
+            except Exception as exc:
+                if attempt == 0 and self._retryable_status(exc) is not None:
+                    continue
+                raise
+        raise RuntimeError("Gemini generation did not return a response.")
+
+    @staticmethod
+    def _function_responses(parts: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"role": "user", "parts": [{"function_response": part} for part in parts]}
+
+    @staticmethod
+    def _collect_result_strings(value: Any) -> set[str]:
+        strings: set[str] = set()
+        if isinstance(value, str):
+            if value.strip():
+                strings.add(value.strip())
+        elif isinstance(value, dict):
+            for child in value.values():
+                strings.update(BoundedAgentCoordinator._collect_result_strings(child))
+        elif isinstance(value, list):
+            for child in value:
+                strings.update(BoundedAgentCoordinator._collect_result_strings(child))
+        return strings
+
+    def _validated_explanation(self, candidate: Any) -> Optional[str]:
+        if not isinstance(candidate, str):
+            return None
+        text = candidate.strip()
+        if not text:
+            return None
+        tool_results: set[str] = set()
+        for result in self._pipeline_results.values():
+            tool_results.update(self._collect_result_strings(result))
+        quoted_results = [value for value in tool_results if value.endswith((".", "!", "?"))]
+        for first in quoted_results:
+            for second in quoted_results:
+                if first == second:
+                    continue
+                if text in {f"{first} {second}", f"{first}\n{second}"}:
+                    return text
+        return None
+
+    def run_gemini_loop(self, client: Any) -> None:
+        """Let Gemini schedule zero-argument tools; the backend still owns every decision."""
+        declarations = [
+            {
+                "name": "validate_details",
+                "description": "Validate the stored items, location, PIN, and fee limit. Takes no arguments.",
+                "parameters": {"type": "OBJECT", "properties": {}},
+            },
+            {
+                "name": "fetch_recycler_profiles",
+                "description": "Fetch and parse each permitted mock recycler source. Takes no arguments.",
+                "parameters": {"type": "OBJECT", "properties": {}},
+            },
+            {
+                "name": "match_items",
+                "description": "Apply deterministic material acceptance, area, and preferred-centre rules. Takes no arguments.",
+                "parameters": {"type": "OBJECT", "properties": {}},
+            },
+            {
+                "name": "compare_fees",
+                "description": "Compare deterministic centre fees with the user's limit. Takes no arguments.",
+                "parameters": {"type": "OBJECT", "properties": {}},
+            },
+            {
+                "name": "draft_plan",
+                "description": "Draft the evidence-backed plan. This never approves or books. Takes no arguments.",
+                "parameters": {"type": "OBJECT", "properties": {}},
+            },
+        ]
+        config = {
+            "temperature": 0,
+            "system_instruction": (
+                "You coordinate ReLoop's deterministic pickup pipeline. Choose the order of the available tools "
+                "and call them without arguments. Tool dependencies are enforced by the backend. Never decide "
+                "acceptance, fees, approval, or booking. After using tools, return exactly two sentences, each "
+                "copied verbatim from a tool result, with no additional claims."
+            ),
+            "tools": [{"function_declarations": declarations}],
+        }
+        contents: list[Any] = [
+            json.dumps(self._pipeline_inputs, ensure_ascii=False, sort_keys=True)
+        ]
+        executions = 0
+        for _ in range(7):
+            response = self._generate_with_retry(client, contents, config)
+            content, calls = self._response_content_and_calls(response)
+            if not calls:
+                self._gemini_explanation = self._validated_explanation(
+                    self._value(response, "text")
+                )
+                break
+
+            function_results: list[dict[str, Any]] = []
+            for call in calls:
+                name = self._value(call, "name", "")
+                args = self._value(call, "args", {}) or {}
+                executions += 1
+                if executions > 6:
+                    result = {"error": "Tool execution limit reached; remaining stages run deterministically."}
+                elif name not in self._GEMINI_TOOLS:
+                    result = {"error": "Unknown tool."}
+                elif args:
+                    result = {"error": "This tool accepts no arguments."}
+                else:
+                    result = self._advance_to(self._GEMINI_TOOLS[name], actor="gemini")
+                function_results.append({"name": name, "response": result})
+
+            if content is not None:
+                contents.append(content)
+            contents.append(self._function_responses(function_results))
+
+        self._run_remaining_stages()
+        self._update_agent_mode()
+
+    def _update_agent_mode(self) -> None:
+        gemini_stages = {
+            entry["tool"]
+            for entry in self.trace
+            if entry["actor"] == "gemini"
+        }
+        expected_gemini_tools = {
+            "gather_and_validate_details",
+            "retrieve_mock_recycler_profiles",
+            "compare_acceptance_rules",
+            "compare_pickup_fees",
+            "prepare_pickup_plan_with_evidence",
+        }
+        if expected_gemini_tools.issubset(gemini_stages):
+            self._agent_mode = "gemini"
+        elif gemini_stages:
+            self._agent_mode = "gemini_partial"
+
+    def _create_gemini_client(self) -> Any:
+        from google import genai
+
+        return genai.Client(api_key=os.getenv("GEMINI_API_KEY", "").strip())
+
+    def run_agent_workflow(
+        self,
+        items: list[dict[str, Any]],
+        city: str,
+        pincode: str,
+        max_fee: float,
+        preferred_centre: Optional[str] = None,
+    ) -> dict[str, Any]:
+        self._begin_pipeline(items, city, pincode, max_fee, preferred_centre)
+        if not TEST_MODE and os.getenv("GEMINI_API_KEY", "").strip():
+            try:
+                self.run_gemini_loop(self._create_gemini_client())
+            except Exception as exc:
+                self._agent_exception = type(exc).__name__
+                logger.warning("Gemini orchestration fell back to backend (%s).", self._agent_exception)
+                self._run_remaining_stages()
+                self._update_agent_mode()
+        else:
+            self._run_remaining_stages()
+
+        result = self._pipeline_result or {
+            "request_id": self.request_id,
+            "status": "failed",
+            "reason": "Agent pipeline did not produce a result.",
+            "plan": None,
+            "agent_trace": self.trace,
+        }
+        result["agent_trace"] = self.trace
+        result["agent_mode"] = self._agent_mode
+        result["agent_exception"] = self._agent_exception
+        if self._gemini_explanation:
+            result["explanation"] = self._gemini_explanation
+        if result.get("plan"):
+            result["plan"]["agent_mode"] = self._agent_mode
+            if self._agent_exception:
+                result["plan"]["agent_exception"] = self._agent_exception
+            if self._gemini_explanation:
+                result["plan"]["agent_explanation"] = self._gemini_explanation
+        return result

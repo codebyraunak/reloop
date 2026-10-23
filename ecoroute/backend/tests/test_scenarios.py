@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
 import subprocess
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -827,6 +829,8 @@ def test_agent_trace_shape_and_persistence():
     traces = resp.json()["agent_traces"]
 
     assert len(traces) == 6
+    assert resp.json()["agent_mode"] == "deterministic"
+    assert resp.json()["plan"]["agent_mode"] == "deterministic"
     expected_tools = [
         "gather_and_validate_details",
         "retrieve_mock_recycler_profiles",
@@ -839,8 +843,245 @@ def test_agent_trace_shape_and_persistence():
         t = traces[idx]
         assert t["step"] == idx + 1
         assert t["tool"] == expected_tool
+        assert t["actor"] == "backend"
         assert "timestamp" in t
         assert "evidence" in t
+
+
+def test_gemini_orchestration_uses_fake_client_tools_and_retries_once(monkeypatch):
+    tool_names = [
+        "validate_details",
+        "fetch_recycler_profiles",
+        "match_items",
+        "compare_fees",
+        "draft_plan",
+    ]
+
+    def response_with_calls(names):
+        parts = [
+            SimpleNamespace(function_call=SimpleNamespace(name=name, args={}))
+            for name in names
+        ]
+        return SimpleNamespace(
+            candidates=[SimpleNamespace(content=SimpleNamespace(parts=parts))],
+            text=None,
+        )
+
+    class RetryableError(Exception):
+        status_code = 503
+
+    class FakeModels:
+        def __init__(self):
+            self.calls = []
+            self.responses = [
+                RetryableError("temporary server failure"),
+                response_with_calls(tool_names),
+                SimpleNamespace(candidates=[SimpleNamespace(content=SimpleNamespace(parts=[]))],
+                                text="Fetched HTML lists 'Laptop' in accepted materials. "
+                                     "Accepted by GreenLoop Electronics Recovery (listed pickup fee ₹50.0)."),
+            ]
+
+        def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            response = self.responses.pop(0)
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+    fake = SimpleNamespace(models=FakeModels())
+    monkeypatch.setattr(agent_module, "TEST_MODE", False)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+
+    coordinator = agent_module.BoundedAgentCoordinator(
+        request_id="EW-FAKEGEM",
+        app_instance=app,
+        request_base_url="http://testserver",
+    )
+    monkeypatch.setattr(coordinator, "_create_gemini_client", lambda: fake)
+    result = coordinator.run_agent_workflow(
+        items=[{"item_type": "laptop", "quantity": 1}],
+        city="Mysuru",
+        pincode="570001",
+        max_fee=100,
+    )
+
+    assert result["agent_mode"] == "gemini"
+    assert result["plan"]["agent_mode"] == "gemini"
+    assert result["explanation"] == (
+        "Fetched HTML lists 'Laptop' in accepted materials. "
+        "Accepted by GreenLoop Electronics Recovery (listed pickup fee ₹50.0)."
+    )
+    assert len(fake.models.calls) == 3
+    assert [trace["actor"] for trace in result["agent_trace"]] == [
+        "gemini", "gemini", "gemini", "gemini", "gemini", "backend"
+    ]
+    assert all("api_key" not in str(call).lower() for call in fake.models.calls)
+    declarations = fake.models.calls[1]["config"]["tools"][0]["function_declarations"]
+    assert [declaration["name"] for declaration in declarations] == tool_names
+    assert all(declaration["parameters"]["properties"] == {} for declaration in declarations)
+    function_responses = fake.models.calls[2]["contents"][-1]["parts"]
+    assert len(function_responses) == len(tool_names)
+    assert all("function_response" in part for part in function_responses)
+
+
+def test_gemini_tool_order_runs_prerequisites_on_backend(monkeypatch):
+    fake_response = SimpleNamespace(
+        candidates=[
+            SimpleNamespace(
+                content=SimpleNamespace(
+                    parts=[
+                        SimpleNamespace(
+                            function_call=SimpleNamespace(name="draft_plan", args={})
+                        )
+                    ]
+                )
+            )
+        ],
+        text=None,
+    )
+    final_response = SimpleNamespace(
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=[]))],
+        text="The result is safe and accepted.",
+    )
+
+    class FakeModels:
+        def __init__(self):
+            self.responses = [fake_response, final_response]
+
+        def generate_content(self, **kwargs):
+            return self.responses.pop(0)
+
+    monkeypatch.setattr(agent_module, "TEST_MODE", False)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    coordinator = agent_module.BoundedAgentCoordinator(
+        request_id="EW-FAKEORDER",
+        app_instance=app,
+        request_base_url="http://testserver",
+    )
+    monkeypatch.setattr(
+        coordinator,
+        "_create_gemini_client",
+        lambda: SimpleNamespace(models=FakeModels()),
+    )
+    result = coordinator.run_agent_workflow(
+        items=[{"item_type": "laptop", "quantity": 1}],
+        city="Mysuru",
+        pincode="570001",
+        max_fee=100,
+    )
+
+    assert result["agent_mode"] == "gemini_partial"
+    assert [trace["actor"] for trace in result["agent_trace"]] == [
+        "backend", "backend", "backend", "backend", "gemini", "backend"
+    ]
+    assert result.get("explanation") is None
+
+
+def test_gemini_tool_execution_cap_returns_responses_for_all_calls(monkeypatch):
+    repeated_calls = [
+        SimpleNamespace(function_call=SimpleNamespace(name="validate_details", args={}))
+        for _ in range(8)
+    ]
+    tool_response = SimpleNamespace(
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=repeated_calls))],
+        text=None,
+    )
+    final_response = SimpleNamespace(
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=[]))],
+        text="No validated tool quote is returned.",
+    )
+
+    class FakeModels:
+        def __init__(self):
+            self.responses = [tool_response, final_response]
+            self.contents = []
+
+        def generate_content(self, **kwargs):
+            self.contents.append(copy.deepcopy(kwargs["contents"]))
+            return self.responses.pop(0)
+
+    monkeypatch.setattr(agent_module, "TEST_MODE", False)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    fake = SimpleNamespace(models=FakeModels())
+    coordinator = agent_module.BoundedAgentCoordinator(
+        request_id="EW-FAKECAP",
+        app_instance=app,
+        request_base_url="http://testserver",
+    )
+    monkeypatch.setattr(coordinator, "_create_gemini_client", lambda: fake)
+    result = coordinator.run_agent_workflow(
+        items=[{"item_type": "laptop", "quantity": 1}],
+        city="Mysuru",
+        pincode="570001",
+        max_fee=100,
+    )
+
+    responses = fake.models.contents[1][-1]["parts"]
+    assert len(responses) == 8
+    assert all("function_response" in part for part in responses)
+    assert sum(
+        "Tool execution limit reached" in part["function_response"]["response"].get("error", "")
+        for part in responses
+    ) == 2
+    assert result["agent_mode"] == "gemini_partial"
+    assert sum(trace["actor"] == "gemini" for trace in result["agent_trace"]) == 1
+
+
+def test_test_mode_never_creates_a_gemini_client(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "configured-but-unused-in-tests")
+    coordinator = agent_module.BoundedAgentCoordinator(
+        request_id="EW-TESTMODE",
+        app_instance=app,
+        request_base_url="http://testserver",
+    )
+
+    def unexpected_client():
+        raise AssertionError("TEST_MODE must not initialize Gemini.")
+
+    monkeypatch.setattr(coordinator, "_create_gemini_client", unexpected_client)
+    result = coordinator.run_agent_workflow(
+        items=[{"item_type": "laptop", "quantity": 1}],
+        city="Mysuru",
+        pincode="570001",
+        max_fee=100,
+    )
+
+    assert result["agent_mode"] == "deterministic"
+    assert result["agent_exception"] is None
+    assert all(trace["actor"] == "backend" for trace in result["agent_trace"])
+
+
+def test_gemini_failure_falls_back_with_exception_type_only(monkeypatch):
+    class BadRequest(Exception):
+        status_code = 400
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            raise BadRequest("secret fake key must not be returned")
+
+    monkeypatch.setattr(agent_module, "TEST_MODE", False)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-test-key")
+    coordinator = agent_module.BoundedAgentCoordinator(
+        request_id="EW-FAKEFAIL",
+        app_instance=app,
+        request_base_url="http://testserver",
+    )
+    monkeypatch.setattr(
+        coordinator,
+        "_create_gemini_client",
+        lambda: SimpleNamespace(models=FakeModels()),
+    )
+    result = coordinator.run_agent_workflow(
+        items=[{"item_type": "laptop", "quantity": 1}],
+        city="Mysuru",
+        pincode="570001",
+        max_fee=100,
+    )
+
+    assert result["agent_mode"] == "deterministic"
+    assert result["agent_exception"] == "BadRequest"
+    assert "secret fake key" not in json.dumps(result)
+    assert all(trace["actor"] == "backend" for trace in result["agent_trace"])
 
 
 def test_assistant_separates_budget_from_quantity():
@@ -855,6 +1096,9 @@ def test_assistant_separates_budget_from_quantity():
     assert body["quantity"] == 1
     assert body["max_fee"] == 100.0
     assert body["booking_performed"] is False
+    assert body["ai_powered"] is False
+    assert body["fallback_used"] is True
+    assert body["tool_called"] is None
 
 
 def test_assistant_never_submits_a_booking():
@@ -993,6 +1237,7 @@ def test_health_endpoint():
     assert body["database_status"] == "connected"
     assert body["database_dialect"] == "sqlite"
     assert isinstance(body["gemini_configured"], bool)
+    assert body["agent_orchestration_enabled"] is False
     assert "DATABASE_URL" not in body
 
 

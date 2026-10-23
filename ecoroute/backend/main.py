@@ -247,6 +247,11 @@ def make_plan(request: RequestCreate) -> dict[str, Any]:
 
     plan = result["plan"]
     plan["agent_trace"] = result["agent_trace"]
+    plan["agent_mode"] = result["agent_mode"]
+    if result.get("agent_exception"):
+        plan["agent_exception"] = result["agent_exception"]
+    if result.get("explanation"):
+        plan["agent_explanation"] = result["explanation"]
     return plan
 
 
@@ -260,6 +265,9 @@ def request_row(row_dict: dict[str, Any]) -> dict[str, Any]:
         res["plan"] = json.loads(res.pop("plan_json"))
     else:
         res["plan"] = {}
+    res["agent_mode"] = res["plan"].get("agent_mode", "deterministic")
+    if res["plan"].get("agent_exception"):
+        res["agent_exception"] = res["plan"]["agent_exception"]
 
     if "items_json" in res and res["items_json"]:
         res["items"] = json.loads(res.pop("items_json"))
@@ -301,6 +309,7 @@ def request_row(row_dict: dict[str, Any]) -> dict[str, Any]:
         {
             "step": t["step"],
             "tool": t["tool"],
+            "actor": t.get("actor", "backend"),
             "input": json.loads(t["input_json"]) if t.get("input_json") else {},
             "output": json.loads(t["output_json"]) if t.get("output_json") else {},
             "evidence": json.loads(t["evidence_json"]) if t.get("evidence_json") else None,
@@ -361,6 +370,7 @@ def health() -> dict[str, Any]:
         ),
         "demo_controls_enabled": demo_controls_enabled(),
         "gemini_configured": bool(GEMINI_API_KEY),
+        "agent_orchestration_enabled": bool(GEMINI_API_KEY) and not TEST_MODE,
         "gemini_model": GEMINI_MODEL if GEMINI_API_KEY else None,
         "timestamp": now_iso(),
     }
@@ -575,10 +585,10 @@ def assistant(payload: AssistantInput) -> dict[str, Any]:
             f"to generate an evidence-backed pickup plan. No booking has been made yet."
         )
 
-    # If Gemini is not configured or in test mode without external calls, return labeled deterministic fallback
+    # The chat assistant is optional; intent extraction and pickup matching remain deterministic.
     if not GEMINI_API_KEY or TEST_MODE:
         return {
-            "reply": f"[Fallback: Rule-based agent active] {fallback_reply}" if not GEMINI_API_KEY else fallback_reply,
+            "reply": f"[Deterministic fallback] {fallback_reply}",
             "item_type": primary_item,
             "quantity": quantity,
             "city": city,
@@ -587,16 +597,20 @@ def assistant(payload: AssistantInput) -> dict[str, Any]:
             "items": extracted["items"],
             "needs_location": not bool(extracted["city"]),
             "booking_performed": False,
-            "ai_powered": False if not GEMINI_API_KEY else True,
-            "fallback_used": not bool(GEMINI_API_KEY),
-            "tool_called": "collect_and_validate_pickup_details",
+            "ai_powered": False,
+            "fallback_used": True,
+            "tool_called": None,
             "tool_result": {
                 "item_type": primary_item,
                 "quantity": quantity,
                 "location": f"{city} {pincode}".strip(),
                 "max_fee": max_fee,
             },
-            "error": "GEMINI_API_KEY not configured." if not GEMINI_API_KEY else None,
+            "error": (
+                "GEMINI_API_KEY not configured."
+                if not GEMINI_API_KEY
+                else "Gemini calls are disabled in TEST_MODE."
+            ),
         }
 
     try:
@@ -636,7 +650,7 @@ def assistant(payload: AssistantInput) -> dict[str, Any]:
             "booking_performed": False,
             "ai_powered": True,
             "fallback_used": False,
-            "tool_called": "collect_and_validate_pickup_details",
+            "tool_called": None,
             "tool_result": {
                 "item_type": primary_item,
                 "quantity": quantity,
@@ -646,7 +660,7 @@ def assistant(payload: AssistantInput) -> dict[str, Any]:
             "error": None,
         }
     except Exception as exc:
-        logger.warning("Gemini assistant call encountered error: %s", exc)
+        logger.warning("Gemini chat response fell back (%s).", type(exc).__name__)
         return {
             "reply": f"[Fallback: {type(exc).__name__}] {fallback_reply}",
             "item_type": primary_item,
@@ -659,7 +673,14 @@ def assistant(payload: AssistantInput) -> dict[str, Any]:
             "booking_performed": False,
             "ai_powered": False,
             "fallback_used": True,
-            "error": str(exc),
+            "tool_called": None,
+            "tool_result": {
+                "item_type": primary_item,
+                "quantity": quantity,
+                "location": f"{city} {pincode}".strip(),
+                "max_fee": max_fee,
+            },
+            "error": type(exc).__name__,
         }
 
 
